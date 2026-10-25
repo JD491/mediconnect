@@ -28,7 +28,8 @@
       Never put these in frontend `.env` — see `SECURITY.md`.
 - [ ] Optionally set the Gemini secret to enable model-backed triage, chat and
       prescription OCR: `supabase secrets set GEMINI_API_KEY=...`
-      (add `GEMINI_MODEL=gemini-2.0-flash` only if you want a non-default model).
+      (add `GEMINI_MODEL=gemini-flash-lite-latest` only if you want a non-default model;
+      lite is the default because full flash models can be capacity-limited).
 - [ ] Set frontend env vars for your production build (see below).
 - [ ] Confirm Realtime replication is enabled for the tables listed in
       `docs/ARCHITECTURE.md` (Database → Replication in the Supabase
@@ -56,7 +57,7 @@ frontend env):
 RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=<your live secret>
 GEMINI_API_KEY=<your Gemini API key>        # optional
-GEMINI_MODEL=gemini-2.0-flash               # optional, this is the default
+GEMINI_MODEL=gemini-flash-lite-latest     # optional, this is the default
 ```
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are auto-provided to Edge
 Functions by Supabase — you don't set these yourself.

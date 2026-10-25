@@ -9,7 +9,7 @@
 // Required secret (set via `supabase secrets set GEMINI_API_KEY=...`):
 //   GEMINI_API_KEY
 // Optional secret:
-//   GEMINI_MODEL   (defaults to gemini-2.0-flash)
+//   GEMINI_MODEL   (defaults to gemini-flash-lite-latest)
 //
 // The function NEVER diagnoses. It returns educational guidance, forces
 // emergency escalation when red-flag symptoms are present, and tells the user
@@ -19,7 +19,7 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-lite-latest';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const corsHeaders = {

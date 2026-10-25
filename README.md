@@ -101,8 +101,9 @@ supabase secrets set RAZORPAY_KEY_SECRET=your_test_key_secret
 # 4. Optional: enable Gemini-powered symptom triage, chat and prescription OCR.
 #    Without this secret the app silently uses its deterministic local engine.
 supabase secrets set GEMINI_API_KEY=your_gemini_api_key
-# optional override (default: gemini-2.0-flash)
-supabase secrets set GEMINI_MODEL=gemini-2.0-flash
+# optional override (default: gemini-flash-lite-latest; use a full flash model
+# only if your project has quota for it — lite is the reliable default)
+supabase secrets set GEMINI_MODEL=gemini-flash-lite-latest
 ```
 
 That's the entire setup — the frontend needs **no** new `.env` variables for
