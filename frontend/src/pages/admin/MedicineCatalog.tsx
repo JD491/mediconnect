@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, type ChangeEvent, type FormEvent } from 'react';
 import { FiSearch, FiEdit2, FiEyeOff, FiEye } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
-import type { Database } from '../../types/database.types';
+import MedicineImage from '../../components/MedicineImage';
+import type { Database, MedicineForm } from '../../types/database.types';
 
 type MedicineRow = Database['public']['Tables']['medicines']['Row'];
 type MedicineUpdate = Database['public']['Tables']['medicines']['Update'];
@@ -66,8 +67,14 @@ export default function MedicineCatalog() {
             {filtered.map((r) => (
               <tr key={r.medicine_id} className="border-b border-white/30 last:border-0">
                 <td className="py-2.5 pr-3">
-                  <p className="font-bold text-[#0f2340]">{r.name}</p>
-                  <p className="text-[11px] text-[#5b7088]">{r.generic_name || '—'}{r.brand ? ` · ${r.brand}` : ''}</p>
+                  <div className="flex items-center gap-2.5">
+                    <MedicineImage name={r.name} form={r.form} src={r.image_url}
+                      className="h-10 w-10 shrink-0 rounded-lg border border-white/60" />
+                    <div>
+                      <p className="font-bold text-[#0f2340]">{r.name}</p>
+                      <p className="text-[11px] text-[#5b7088]">{r.generic_name || '—'}{r.brand ? ` · ${r.brand}` : ''}</p>
+                    </div>
+                  </div>
                 </td>
                 <td className="py-2.5 pr-3 text-[#33475b]">{r.category || '—'}</td>
                 <td className="py-2.5 pr-3 text-[#33475b] capitalize">{r.form || '—'}</td>
@@ -94,6 +101,7 @@ export default function MedicineCatalog() {
 interface EditForm {
   name: string; generic_name: string; brand: string; category: string; manufacturer: string;
   dosage: string; pack_size: string; description: string; prescription_required: boolean;
+  form: MedicineForm; gst_rate: string; salt_composition: string; image_url: string;
 }
 
 interface EditModalProps {
@@ -108,19 +116,25 @@ function EditModal({ row, saving, onClose, onSave }: EditModalProps) {
     name: row.name, generic_name: row.generic_name || '', brand: row.brand || '', category: row.category || '',
     manufacturer: row.manufacturer || '', dosage: row.dosage || '', pack_size: row.pack_size || '',
     description: row.description || '', prescription_required: row.prescription_required,
+    form: row.form || 'tablet', gst_rate: String(row.gst_rate ?? 5),
+    salt_composition: row.salt_composition || '', image_url: row.image_url || '',
   });
   const set = (k: keyof EditForm) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }));
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onSave(form);
+    onSave({ ...form, gst_rate: Number(form.gst_rate) || 0 });
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true">
       <form onSubmit={submit} className="glass-card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h3 className="font-extrabold text-[#0f2340] mb-4">Edit Medicine</h3>
+        <div className="flex items-center gap-3 mb-4">
+          <MedicineImage name={form.name || row.name} form={form.form} src={form.image_url}
+            className="h-14 w-14 shrink-0 rounded-xl border border-white/60" />
+          <h3 className="font-extrabold text-[#0f2340]">Edit Medicine</h3>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <input required value={form.name} onChange={set('name')} placeholder="Name" className="input-field col-span-2" />
           <input value={form.generic_name} onChange={set('generic_name')} placeholder="Generic name" className="input-field" />
@@ -128,7 +142,19 @@ function EditModal({ row, saving, onClose, onSave }: EditModalProps) {
           <input value={form.category} onChange={set('category')} placeholder="Category" className="input-field" />
           <input value={form.manufacturer} onChange={set('manufacturer')} placeholder="Manufacturer" className="input-field" />
           <input value={form.dosage} onChange={set('dosage')} placeholder="Dosage" className="input-field" />
+          <select value={form.form} onChange={(e) => setForm((f) => ({ ...f, form: e.target.value as MedicineForm }))} className="input-field">
+            {(['tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'inhaler', 'gel', 'device', 'strips', 'powder', 'other'] as MedicineForm[]).map((f) => (
+              <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>
+            ))}
+          </select>
           <input value={form.pack_size} onChange={set('pack_size')} placeholder="Pack size" className="input-field" />
+          <select value={form.gst_rate} onChange={(e) => setForm((f) => ({ ...f, gst_rate: e.target.value }))} className="input-field">
+            <option value="5">GST 5%</option>
+            <option value="12">GST 12%</option>
+            <option value="18">GST 18%</option>
+          </select>
+          <input value={form.salt_composition} onChange={set('salt_composition')} placeholder="Salt composition" className="input-field col-span-2" />
+          <input value={form.image_url} onChange={set('image_url')} placeholder="Image URL (optional — bundled art is used when blank)" className="input-field col-span-2" />
           <textarea value={form.description} onChange={set('description')} placeholder="Description" className="input-field col-span-2" rows={2} />
           <label className="col-span-2 flex items-center gap-2 text-xs font-bold text-[#33475b]">
             <input type="checkbox" checked={form.prescription_required} onChange={set('prescription_required')} /> Prescription required

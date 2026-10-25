@@ -14,7 +14,7 @@ been run against a live Supabase project.
 | Doctor | Manage own availability/appointments/profile | Touch another doctor's patients |
 | Nurse | Record vitals/tasks/notes for assigned patients | Escalate their own role |
 | Admin | Everything, including override transitions | (Admin is fully trusted by design — see "Trusting admin" below) |
-| Edge Function (`service_role`) | Anything, but code is narrowly scoped to payment verification | N/A — trusted by architecture, not by policy |
+| Edge Function (`service_role`) | Anything, but code is narrowly scoped to payment verification and AI proxying | N/A — trusted by architecture, not by policy |
 
 ## Authentication & session handling
 
@@ -78,6 +78,26 @@ Function secrets (`supabase secrets set ...`), never frontend `.env`
 variables. The public Key ID is returned to the client at checkout time by
 the create-order function itself — that's the only Razorpay credential the
 browser ever sees.
+
+Appointments reuse the same functions with `kind: 'appointment'`; the amount
+is read from `doctors.consultation_fee` server-side, and a unique partial
+index (`razorpay_payment_id`) prevents one payment from settling two
+appointments.
+
+## AI health features
+
+- `GEMINI_API_KEY` (and optional `GEMINI_MODEL`) are Edge Function secrets
+  only. The browser never receives them; it calls the `gemini-health`
+  function through the Supabase client, so requests still carry a valid
+  Supabase JWT (verified by the platform's default `verify_jwt`).
+- If the secret is missing or Gemini fails, the client falls back to
+  deterministic local logic in `lib/aiHealth.ts` / `lib/prescriptionOcr.ts`;
+  no AI output is required for any clinical or payment action to succeed.
+- Model output is treated as advisory: red-flag symptoms are escalated
+  locally and cannot be downgraded by a model response, and OCR text is
+  always shown as editable before medicines are added to a cart.
+- A scanned prescription is stored in the browser session (not a public URL)
+  and is auto-attached at checkout only for stores that require an Rx.
 
 ## Prescription privacy
 

@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { useAuth } from './lib/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import PageTransition from './components/PageTransition';
+import AIHealthChatbot from './components/AIHealthChatbot';
 import type { UserRole } from './types/database.types';
 
 import Landing from './pages/shared/Landing';
@@ -110,6 +111,8 @@ export default function App() {
             (otherwise navigating to / or /login instantly bounces back to /). */}
         <Route path="/app/*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      <AIHealthChatbot />
     </>
   );
 }

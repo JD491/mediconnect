@@ -3,13 +3,15 @@
 ## System overview
 
 MediConnect is a **Supabase-native** app: there is no separate backend
-service for anything except payment verification. The frontend
-(React 18 + Vite, incrementally TypeScript) talks directly to Postgres
-through Supabase's auto-generated REST API (`@supabase/supabase-js`),
+service for anything except payment verification and optional AI calls. The
+frontend (React 18 + Vite, incrementally TypeScript) talks directly to
+Postgres through Supabase's auto-generated REST API (`@supabase/supabase-js`),
 protected entirely by Row Level Security. The only server-side compute is
-two small Deno Edge Functions for Razorpay payment creation/verification —
-everything else (business rules, validation, notifications, audit logging)
-lives in the database as triggers and RPC functions.
+three small Deno Edge Functions — two for Razorpay payment
+creation/verification and one optional Gemini gateway for health chat, triage
+and prescription OCR — everything else (business rules, validation,
+notifications, audit logging) lives in the database as triggers and RPC
+functions.
 
 ```
 Browser (React SPA)
@@ -20,10 +22,17 @@ Supabase
    ├─ Auth       → JWT issuance, session refresh
    ├─ Storage    → prescriptions bucket (private, RLS-enforced)
    ├─ Realtime   → logical replication → postgres_changes subscriptions
-   └─ Edge Functions (Deno, service_role)
-        ├─ razorpay-create-order   → api.razorpay.com
-        └─ razorpay-verify-payment → api.razorpay.com
+   └─ Edge Functions (Deno, secrets server-side)
+        ├─ razorpay-create-order   → api.razorpay.com  (service_role)
+        ├─ razorpay-verify-payment → api.razorpay.com  (service_role)
+        └─ gemini-health (optional) → Gemini API (chat / triage / ocr)
 ```
+
+Every AI surface degrades gracefully: `lib/aiHealth.ts` and
+`lib/prescriptionOcr.ts` contain deterministic local engines, so the
+assistant, symptom checker and prescription scan keep working when
+`GEMINI_API_KEY` is unset or the network is unavailable. Red-flag symptoms
+escalate locally and can never be downgraded by a model response.
 
 Why this shape: every route a hand-rolled Express backend would expose
 (auth, medicines, stores, orders, appointments...) maps 1:1 to a Postgres
@@ -47,15 +56,15 @@ places that must all agree:
 to render. If someone bypasses it (devtools, direct API calls), RLS is the
 actual gate. See `SECURITY.md` for the specific policies.
 
-Each role gets its own dashboard shell (`components/DashboardShell.jsx`)
+Each role gets its own dashboard shell (`components/DashboardShell.tsx`)
 with role-specific nav, rendered under a lazy-loaded route
-(`pages/{role}/...Dashboard.jsx`) wrapped in an `ErrorBoundary` so a bug in
+(`pages/{role}/...Dashboard.tsx`) wrapped in an `ErrorBoundary` so a bug in
 one role's pages can't take down the whole app.
 
 ## Data flow: placing an order (representative example)
 
 1. Customer builds a cart (`cart_items`, one row per stock item).
-2. Checkout wizard (`Cart.jsx`) computes totals client-side via the pure,
+2. Checkout wizard (`pages/patient/Cart.tsx`) computes totals client-side via the pure,
    tested `computeCartTotals()` (`lib/cartMath.ts`) — this is a *preview*,
    not the source of truth.
 3. On submit: `orders` row inserted (trigger forces `status: 'pending'`,
@@ -100,35 +109,44 @@ See `SECURITY.md` for the full threat-model writeup of these mechanisms.
 ```
 frontend/src/
 ├── lib/            supabaseClient.ts, AuthContext.tsx, payments.ts,
-│                   orderStatus.ts, cartMath.ts, symptomEngine.js
+│                   orderStatus.ts, cartMath.ts, aiHealth.ts,
+│                   prescriptionOcr.ts, symptomEngine.ts
 ├── types/          database.types.ts (hand-mirrored; regenerate via
 │                   `supabase gen types` against your live project)
 ├── components/     DashboardShell, NotificationBell, ErrorBoundary,
+│                   AIHealthChatbot, MedicineImage, DeliveryBar,
+│                   LocationModal, LiveTrackingMap, RevenueReconciliation,
 │                   Reveal (scroll animation), UIStates (loading/empty/error)
 ├── pages/
 │   ├── auth/       Login, Signup
-│   ├── patient/    Marketplace, Cart (5-step checkout), Orders, Prescriptions...
-│   ├── nurse/      Vitals, Tasks, Notes
-│   ├── doctor/     Appointments, Availability, Profile
+│   ├── patient/    Marketplace, Cart (5-step checkout), Orders, Prescriptions,
+│   │               PrescriptionScan, SymptomChecker, Tracking...
+│   ├── nurse/      VitalsTriage, MedicationTasks, NurseProfile
+│   ├── doctor/     Consultations, WritePrescription, Patients, Availability
 │   ├── store/      Inventory, Orders, Prescriptions, Coupons, Reports
 │   ├── admin/      Users, Stores, Doctors, Catalog, Reviews, Audit Logs
 │   └── shared/     Landing, Emergency
 └── __tests__/      Vitest + React Testing Library
 
+frontend/public/     manifest.webmanifest, sw.js, offline.html, robots.txt,
+                    brand/ + medicine/ SVG assets
+
 supabase/
-├── migrations/     0001–0011, additive only, see README Quick Start for order
-└── functions/      razorpay-create-order, razorpay-verify-payment
+├── migrations/     0001–0012, additive only, see README Quick Start for order
+└── functions/      razorpay-create-order, razorpay-verify-payment,
+                    gemini-health (chat / triage / ocr)
 ```
 
-## Why the codebase is JS + TS, not 100% TypeScript
+## TypeScript across the whole frontend
 
-`lib/`, `types/`, `components/UIStates.tsx`, `App.tsx`, and new code are
-strictly-typed TS. The ~40 existing page components remain `.jsx`. This is
-a deliberate incremental ("strangler fig") migration, enabled by
-`allowJs: true` in `tsconfig.app.json`: JS pages already get real type
-checking on every call into the typed `lib/` modules (a typo'd Supabase
-column name inside `payments.ts` would be caught even though the page
-calling it is plain JS), while a full-codebase conversion — which can't be
-verified against a live Supabase project from this environment — isn't
-risked as an unverified, unreviewable diff. Convert a page to `.tsx`
-whenever you're already touching it for other reasons.
+Every file under `frontend/src/` is strict-mode TypeScript (`.ts`/`.tsx`) —
+pages, components, hooks, `lib/` and `types/` — and `tsc -b` is clean. The
+migration off `.jsx` was done incrementally ("strangler fig") rather than in
+one unverifiable pass: typed `lib/` modules were the foundation, then pages
+were converted file-by-file behind the existing test suite. `allowJs` is now
+off in `tsconfig.app.json`, so a stray `.js`/`.jsx` file would fail the build
+instead of silently escaping type-checking. Supabase database types are
+hand-mirrored in `types/database.types.ts`; regenerate with
+`supabase gen types` after schema changes. Keep new code strictly typed. Supabase database types are hand-mirrored in
+`types/database.types.ts`; regenerate with `supabase gen types` after schema
+changes. Keep new code strictly typed.

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { FiSearch, FiEdit2, FiEyeOff, FiEye, FiPackage } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { LoadingSpinner, EmptyState } from '../../components/UIStates';
+import MedicineImage from '../../components/MedicineImage';
 import type { StorePageProps, StockWithMedicine } from '../../types/store';
 import type { Database } from '../../types/database.types';
 
@@ -52,7 +53,7 @@ export default function Inventory({ store }: StorePageProps) {
     setLoading(true);
     const { data } = await supabase
       .from('stock')
-      .select('*, medicine:medicines(medicine_id, name, category, image_url, prescription_required)')
+      .select('*, medicine:medicines(medicine_id, name, category, image_url, prescription_required, form)')
       .eq('store_id', store.store_id)
       .order('updated_at', { ascending: false });
     setRows((data ?? []) as unknown as StockWithMedicine[]);
@@ -132,20 +133,29 @@ export default function Inventory({ store }: StorePageProps) {
             <tbody>
               {filtered.map((r) => {
                 const status = computeStatus(r);
+                const pctOff = r.mrp > r.price ? Math.round(((r.mrp - r.price) / r.mrp) * 100) : 0;
                 return (
                   <tr key={r.stock_id} className="border-b border-white/30 last:border-0">
                     <td className="py-2.5 pr-3">
-                      <p className="font-bold text-[#0f2340]">{r.medicine?.name}</p>
-                      <p className="text-[11px] text-[#5b7088]">
-                        {r.medicine?.category || '—'}{r.medicine?.prescription_required ? ' · Rx required' : ''}
-                      </p>
+                      <div className="flex items-center gap-2.5">
+                        <MedicineImage name={r.medicine?.name ?? 'Medicine'} form={r.medicine?.form} src={r.medicine?.image_url}
+                          className="h-10 w-10 shrink-0 rounded-lg border border-white/60" />
+                        <div>
+                          <p className="font-bold text-[#0f2340]">{r.medicine?.name}</p>
+                          <p className="text-[11px] text-[#5b7088]">
+                            {r.medicine?.category || '—'}{r.medicine?.prescription_required ? ' · Rx required' : ''}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-2.5 pr-3 text-[#33475b]">{r.batch_number || '—'}</td>
                     <td className="py-2.5 pr-3 text-[#33475b]">
                       {r.quantity} <span className="text-[11px] text-[#8a9bb0]">(min {r.min_stock_level})</span>
                     </td>
                     <td className="py-2.5 pr-3 text-[#33475b]">
-                      ₹{r.mrp} / ₹{r.price}{r.discount_percent > 0 ? ` (-${r.discount_percent}%)` : ''}
+                      <span className="text-[11px] text-[#8a9bb0] line-through">₹{r.mrp}</span>{' '}
+                      <span className="font-bold">₹{r.price}</span>
+                      {pctOff > 0 && <span className="badge bg-emerald-100 text-emerald-700 ml-1.5">{pctOff}% OFF</span>}
                     </td>
                     <td className="py-2.5 pr-3 text-[#33475b]">{r.expiry_date || '—'}</td>
                     <td className="py-2.5 pr-3"><span className={`badge ${status.tone}`}>{status.label}</span></td>
@@ -194,6 +204,23 @@ function EditStockModal({ row, saving, onClose, onSave }: EditStockModalProps) {
   const [err, setErr] = useState('');
   const set = (k: keyof EditStockForm) => (e: ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // MRP/selling price drive the discount, so keep the percentage in sync live.
+  const setPricing = (k: 'mrp' | 'price') => (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setForm((f) => {
+      const next = { ...f, [k]: value };
+      const mrp = Number(k === 'mrp' ? value : next.mrp);
+      const price = Number(k === 'price' ? value : next.price);
+      if (Number.isFinite(mrp) && mrp > 0 && Number.isFinite(price) && price >= 0 && price <= mrp) {
+        next.discount_percent = String(Math.round(((mrp - price) / mrp) * 100));
+      }
+      return next;
+    });
+  };
+  const livePct = Number(form.mrp) > 0 && Number(form.price) >= 0 && Number(form.price) <= Number(form.mrp)
+    ? Math.round(((Number(form.mrp) - Number(form.price)) / Number(form.mrp)) * 100)
+    : 0;
+
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (form.manufacturing_date && form.expiry_date && form.expiry_date < form.manufacturing_date) {
@@ -214,10 +241,21 @@ function EditStockModal({ row, saving, onClose, onSave }: EditStockModalProps) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true">
       <form onSubmit={submit} className="glass-card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h3 className="font-extrabold text-[#0f2340] mb-4">{row.medicine?.name} — Update Stock</h3>
+        <div className="flex items-center gap-3 mb-4">
+          <MedicineImage name={row.medicine?.name ?? 'Medicine'} form={row.medicine?.form} src={row.medicine?.image_url}
+            className="h-14 w-14 shrink-0 rounded-xl border border-white/60" />
+          <div>
+            <h3 className="font-extrabold text-[#0f2340]">{row.medicine?.name} — Update Stock</h3>
+            <p className="text-[11px] text-[#5b7088]">Changes go live for customers immediately.</p>
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <label className="text-xs font-bold text-[#5b7088]">MRP<input type="number" step="0.01" value={form.mrp} onChange={set('mrp')} className="input-field mt-1" /></label>
-          <label className="text-xs font-bold text-[#5b7088]">Selling Price<input type="number" step="0.01" value={form.price} onChange={set('price')} className="input-field mt-1" /></label>
+          <label className="text-xs font-bold text-[#5b7088]">MRP<input type="number" step="0.01" value={form.mrp} onChange={setPricing('mrp')} className="input-field mt-1" /></label>
+          <label className="text-xs font-bold text-[#5b7088]">Selling Price<input type="number" step="0.01" value={form.price} onChange={setPricing('price')} className="input-field mt-1" /></label>
+          <div className="col-span-2 flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2">
+            <span className="text-[11px] font-bold text-emerald-700">Live customer discount</span>
+            <span className="text-sm font-extrabold text-emerald-700">{livePct}% OFF{Number(form.mrp) > Number(form.price) ? ` · save ₹${(Number(form.mrp) - Number(form.price)).toFixed(2)}` : ''}</span>
+          </div>
           <label className="text-xs font-bold text-[#5b7088]">Discount %<input type="number" step="0.01" value={form.discount_percent} onChange={set('discount_percent')} className="input-field mt-1" /></label>
           <label className="text-xs font-bold text-[#5b7088]">Quantity<input type="number" value={form.quantity} onChange={set('quantity')} className="input-field mt-1" /></label>
           <label className="text-xs font-bold text-[#5b7088]">Min Stock Level<input type="number" value={form.min_stock_level} onChange={set('min_stock_level')} className="input-field mt-1" /></label>

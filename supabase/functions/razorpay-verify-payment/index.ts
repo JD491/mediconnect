@@ -1,14 +1,20 @@
 // Supabase Edge Function: razorpay-verify-payment
 //
-// This is the ONLY place a payment is ever marked "paid". The frontend
-// cannot do this itself. Verification has two independent layers:
+// This is the ONLY place a payment is ever marked "paid" (for either a
+// pharmacy order or a doctor appointment). The frontend cannot do this
+// itself. Verification has two independent layers:
 //   1. HMAC-SHA256 signature check (proves the callback wasn't forged)
 //   2. A direct server-to-server call to Razorpay's Payments API to confirm
 //      the payment actually exists, was captured, is in INR, and its amount
-//      matches this order's total exactly — so a forged-but-correctly-signed
-//      payload for a *different, cheaper* payment can't be replayed here.
-// A payment_id already attached to a different order is rejected outright
-// (also enforced at the DB layer via a unique constraint, as defense in depth).
+//      matches this order/appointment's price exactly — so a forged-but-
+//      correctly-signed payload for a *different, cheaper* payment can't be
+//      replayed here.
+// A payment_id already attached to a different order/appointment is rejected
+// outright (also enforced at the DB layer via unique indexes, as defense in
+// depth).
+//
+// Request body: { order_id, kind?: 'order' | 'appointment', razorpay_order_id,
+//                 razorpay_payment_id, razorpay_signature }
 //
 // Required secrets: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
 // (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are auto-provided.)
@@ -50,36 +56,76 @@ serve(async (req) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (userErr || !userData?.user) return json({ error: 'Unauthorized' }, 401);
 
-    const { order_id, razorpay_order_id, razorpay_payment_id, razorpay_signature } = await req.json();
+    const { order_id, kind = 'order', razorpay_order_id, razorpay_payment_id, razorpay_signature } = await req.json();
     if (!order_id || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return json({ error: 'Missing verification fields' }, 400);
     }
+    if (kind !== 'order' && kind !== 'appointment') return json({ error: 'Unknown payment target' }, 400);
 
-    const { data: order, error: orderErr } = await supabase
-      .from('orders').select('order_id, user_id, total_amount, razorpay_order_id, razorpay_payment_id, payment_status')
-      .eq('order_id', order_id).single();
+    const isAppointment = kind === 'appointment';
 
-    if (orderErr || !order) return json({ error: 'Order not found' }, 404);
-    if (order.user_id !== userData.user.id) return json({ error: 'Forbidden' }, 403);
-    if (order.razorpay_order_id !== razorpay_order_id) return json({ error: 'Order mismatch' }, 400);
+    let ownerId: string;
+    let expectedAmount: number;
+    let storedRazorpayOrderId: string | null;
+    let paymentStatus: string;
 
-    if (order.payment_status === 'paid') {
+    if (isAppointment) {
+      const { data: appointment, error: appointmentErr } = await supabase
+        .from('appointments')
+        .select('appointment_id, patient_id, razorpay_order_id, payment_status, doctor:doctors(consultation_fee)')
+        .eq('appointment_id', order_id)
+        .single();
+
+      if (appointmentErr || !appointment) return json({ error: 'Appointment not found' }, 404);
+      ownerId = appointment.patient_id;
+      storedRazorpayOrderId = appointment.razorpay_order_id;
+      paymentStatus = appointment.payment_status;
+      expectedAmount = Number(appointment.doctor?.consultation_fee ?? 0);
+    } else {
+      const { data: order, error: orderErr } = await supabase
+        .from('orders').select('order_id, user_id, total_amount, razorpay_order_id, payment_status')
+        .eq('order_id', order_id).single();
+
+      if (orderErr || !order) return json({ error: 'Order not found' }, 404);
+      ownerId = order.user_id;
+      storedRazorpayOrderId = order.razorpay_order_id;
+      paymentStatus = order.payment_status;
+      expectedAmount = Number(order.total_amount);
+    }
+
+    if (ownerId !== userData.user.id) return json({ error: 'Forbidden' }, 403);
+    if (storedRazorpayOrderId !== razorpay_order_id) return json({ error: 'Order mismatch' }, 400);
+
+    if (paymentStatus === 'paid') {
       // Idempotent: a duplicate client retry should not double-process.
       return json({ success: true, already_verified: true });
     }
 
+    const markFailed = async () => {
+      if (isAppointment) {
+        await supabase.from('appointments').update({ payment_status: 'failed' }).eq('appointment_id', order_id);
+      } else {
+        await supabase.from('orders').update({ payment_status: 'failed' }).eq('order_id', order_id);
+      }
+    };
+
     // Layer 1: signature.
     const expected = await hmacHex(RAZORPAY_KEY_SECRET, `${razorpay_order_id}|${razorpay_payment_id}`);
     if (expected !== razorpay_signature) {
-      await supabase.from('orders').update({ payment_status: 'failed' }).eq('order_id', order_id);
+      await markFailed();
       return json({ error: 'Signature verification failed' }, 400);
     }
 
-    // Duplicate-processing guard: this payment_id must not already be on a different order.
-    const { data: dupe } = await supabase
-      .from('orders').select('order_id').eq('razorpay_payment_id', razorpay_payment_id).neq('order_id', order_id).maybeSingle();
-    if (dupe) {
-      return json({ error: 'This payment has already been used for a different order' }, 409);
+    // Duplicate-processing guard: this payment_id must not already be attached
+    // to a different order or appointment.
+    const [{ data: dupeOrder }, { data: dupeAppointment }] = await Promise.all([
+      supabase.from('orders').select('order_id').eq('razorpay_payment_id', razorpay_payment_id).maybeSingle(),
+      supabase.from('appointments').select('appointment_id').eq('razorpay_payment_id', razorpay_payment_id).maybeSingle(),
+    ]);
+    const orderConflict = Boolean(dupeOrder) && (!isAppointment || dupeOrder!.order_id !== order_id);
+    const appointmentConflict = Boolean(dupeAppointment) && (!isAppointment || dupeAppointment!.appointment_id !== order_id);
+    if (orderConflict || appointmentConflict) {
+      return json({ error: 'This payment has already been used for a different booking' }, 409);
     }
 
     // Layer 2: ask Razorpay directly what actually happened with this payment —
@@ -92,7 +138,7 @@ serve(async (req) => {
     }
     const payment = await payRes.json();
 
-    const expectedAmountPaise = Math.round(Number(order.total_amount) * 100);
+    const expectedAmountPaise = Math.round(expectedAmount * 100);
     const checks = {
       order_id_matches: payment.order_id === razorpay_order_id,
       captured: payment.status === 'captured',
@@ -100,13 +146,22 @@ serve(async (req) => {
       amount_matches: payment.amount === expectedAmountPaise,
     };
     if (!Object.values(checks).every(Boolean)) {
-      await supabase.from('orders').update({ payment_status: 'failed' }).eq('order_id', order_id);
+      await markFailed();
       return json({ error: 'Payment could not be verified', detail: checks }, 400);
     }
 
-    await supabase.from('orders').update({
-      payment_status: 'paid', payment_verified: true, razorpay_payment_id,
-    }).eq('order_id', order_id);
+    if (isAppointment) {
+      await supabase.from('appointments').update({
+        payment_status: 'paid',
+        payment_verified: true,
+        payment_ref: razorpay_payment_id,
+        razorpay_payment_id,
+      }).eq('appointment_id', order_id);
+    } else {
+      await supabase.from('orders').update({
+        payment_status: 'paid', payment_verified: true, razorpay_payment_id,
+      }).eq('order_id', order_id);
+    }
 
     return json({ success: true });
   } catch (e) {

@@ -9,6 +9,7 @@ import type { IconType } from 'react-icons';
 import { useAuth } from '../../lib/AuthContext';
 import Reveal, { Stagger, StaggerItem } from '../../components/Reveal';
 import AmbientBackground from '../../components/AmbientBackground';
+import DeliveryBar from '../../components/DeliveryBar';
 
 const CATEGORIES = ['Pain Relief', 'Cold & Fever', 'Diabetes Care', 'Skin Care', 'Vitamins', 'Baby Care', 'Ayurveda', "Women's Health"];
 
@@ -73,6 +74,7 @@ function Navbar() {
           <span className="font-extrabold text-lg text-[#0f2340] hidden sm:inline">MediConnect</span>
         </Link>
         <div className="hidden md:flex items-center gap-3">
+          <DeliveryBar variant="light" />
           <Link to="/emergency" className="btn-ghost !py-2 !text-sm !text-rose-600">Emergency</Link>
           {session ? (
             <Link to="/app" className="btn-primary !py-2 !text-sm">Go to Dashboard</Link>
@@ -92,6 +94,7 @@ function Navbar() {
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             className="md:hidden overflow-hidden border-t border-white/50 bg-white/80">
             <div className="flex flex-col gap-2 p-4">
+              <DeliveryBar variant="light" className="justify-center" />
               <Link to="/emergency" onClick={() => setOpen(false)} className="btn-ghost !text-sm !text-rose-600 text-center">Emergency</Link>
               {session ? (
                 <Link to="/app" onClick={() => setOpen(false)} className="btn-primary !text-sm text-center">Go to Dashboard</Link>

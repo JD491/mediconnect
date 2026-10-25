@@ -1,16 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-IN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#173e93" />
-  <meta name="description" content="MediConnect — order medicines from verified pharmacies, consult doctors online, and manage your family's healthcare, all in one trusted platform for India." />
-  <link rel="icon" type="image/png" href="/brand/favicon-32.png" />
-  <link rel="apple-touch-icon" href="/brand/favicon-180.png" />
+  <meta name="color-scheme" content="light" />
+  <meta name="application-name" content="MediConnect" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="MediConnect" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <meta name="description" content="MediConnect — order medicines from verified pharmacies near you, consult doctors online or in person, scan prescriptions and reach emergency care in one tap." />
+  <meta name="keywords" content="online pharmacy India, order medicines, doctor consultation, prescription scan, emergency hospital, MediConnect" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="MediConnect" />
+  <meta property="og:title" content="MediConnect — Your Health, Our Priority" />
+  <meta property="og:description" content="Verified pharmacy stock near you, online and in-person doctors, AI-assisted symptom guidance and one-tap emergency services." />
+  <meta property="og:image" content="/brand/mediconnect-logo.png" />
+  <meta property="og:locale" content="en_IN" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="MediConnect — Your Health, Our Priority" />
+  <meta name="twitter:description" content="Medicines, doctors and emergency care in one trusted platform for India." />
+  <meta name="twitter:image" content="/brand/mediconnect-logo.png" />
+
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/brand/favicon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/brand/favicon-180.png" />
+
   <title>MediConnect — Your Health, Our Priority</title>
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "MediConnect",
+      "description": "MediConnect connects patients with verified pharmacies, licensed doctors, nurses and emergency services across India.",
+      "logo": "/brand/mediconnect-logo.png",
+      "areaServed": "IN",
+      "knowsLanguage": ["en", "hi", "mr"]
+    }
+  </script>
 </head>
 <body class="bg-gradient-to-br from-brand-50 via-white to-accent-50 min-h-screen">
   <div id="root"></div>
+  <noscript>
+    <div style="max-width:640px;margin:48px auto;padding:24px;font-family:system-ui,sans-serif;text-align:center">
+      <img src="/brand/mediconnect-icon.png" alt="MediConnect" style="height:56px" />
+      <h1 style="color:#0f2340">MediConnect needs JavaScript</h1>
+      <p style="color:#5b7088">Please enable JavaScript to order medicines, book a doctor or use emergency services.</p>
+    </div>
+  </noscript>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

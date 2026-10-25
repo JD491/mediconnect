@@ -12,7 +12,7 @@ export interface OrderWithStoreName extends OrderRow {
 }
 
 export interface OrderItemWithMedicine extends OrderItemRow {
-  medicine: Pick<MedicineRow, 'name' | 'image_url'> | null;
+  medicine: Pick<MedicineRow, 'name' | 'image_url' | 'form' | 'gst_rate'> | null;
 }
 
 /** Full detail row used by OrderTracking: order + items + store contact info. */
@@ -23,7 +23,7 @@ export interface OrderDetail extends OrderRow {
 
 /** orders.* joined with store:stores(...) for the order-tracking header/contact card. */
 export interface OrderTrackingOrder extends OrderRow {
-  store: Pick<StoreRow, 'store_id' | 'store_name' | 'phone' | 'email' | 'address'> | null;
+  store: (Pick<StoreRow, 'store_id' | 'store_name' | 'phone' | 'email' | 'address'> & Partial<Pick<StoreRow, 'latitude' | 'longitude' | 'city'>>) | null;
 }
 
 export type PrescriptionWithOrder = PrescriptionRow & {

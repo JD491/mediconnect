@@ -11,5 +11,5 @@ export interface StorePageProps {
 
 /** stock.* joined with medicine:medicines(...) — the shape used by the Inventory page listing. */
 export interface StockWithMedicine extends StockRow {
-  medicine: Pick<MedicineRow, 'medicine_id' | 'name' | 'category' | 'image_url' | 'prescription_required'> | null;
+  medicine: Pick<MedicineRow, 'medicine_id' | 'name' | 'category' | 'image_url' | 'prescription_required' | 'form'> | null;
 }

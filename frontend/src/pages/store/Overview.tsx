@@ -5,7 +5,9 @@ import { FiShoppingBag, FiPackage, FiAlertTriangle, FiClock, FiFileText, FiTrend
 import { supabase } from '../../lib/supabaseClient';
 import { Stagger, StaggerItem } from '../../components/Reveal';
 import { PageLoader } from '../../components/UIStates';
+import RevenueReconciliation from '../../components/RevenueReconciliation';
 import type { StorePageProps } from '../../types/store';
+import type { Database } from '../../types/database.types';
 
 type Tone = 'violet' | 'amber' | 'rose' | 'emerald';
 
@@ -52,6 +54,7 @@ interface Stats {
 
 export default function Overview({ store }: StorePageProps) {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [todayOrders, setTodayOrders] = useState<Database['public']['Tables']['orders']['Row'][]>([]);
 
   useEffect(() => {
     let active = true;
@@ -60,7 +63,7 @@ export default function Overview({ store }: StorePageProps) {
       todayStart.setHours(0, 0, 0, 0);
 
       const [ordersToday, pendingOrders, stockRows, pendingRx] = await Promise.all([
-        supabase.from('orders').select('order_id, total_amount').eq('store_id', store.store_id).gte('created_at', todayStart.toISOString()),
+        supabase.from('orders').select('*').eq('store_id', store.store_id).gte('created_at', todayStart.toISOString()),
         supabase.from('orders').select('order_id', { count: 'exact', head: true }).eq('store_id', store.store_id).eq('status', 'pending'),
         supabase.from('stock').select('stock_id, quantity, min_stock_level, expiry_date, is_active').eq('store_id', store.store_id),
         supabase.from('prescriptions').select('prescription_id', { count: 'exact', head: true }).eq('store_id', store.store_id).eq('status', 'pending'),
@@ -72,6 +75,7 @@ export default function Overview({ store }: StorePageProps) {
       const in90 = new Date();
       in90.setDate(in90.getDate() + 90);
 
+      setTodayOrders((ordersToday.data ?? []) as Database['public']['Tables']['orders']['Row'][]);
       setStats({
         todaySales: (ordersToday.data ?? []).reduce((sum, o) => sum + Number(o.total_amount || 0), 0),
         todayOrders: (ordersToday.data ?? []).length,
@@ -91,15 +95,18 @@ export default function Overview({ store }: StorePageProps) {
   if (!stats) return <PageLoader label="Loading dashboard..." />;
 
   return (
-    <Stagger className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <StaggerItem><StatCard icon={FiTrendingUp} label="Today's Sales" value={`₹${stats.todaySales.toFixed(0)}`} tone="emerald" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiShoppingBag} label="Today's Orders" value={stats.todayOrders} to="/app/store-owner/orders" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiClock} label="Pending Orders" value={stats.pendingOrders} to="/app/store-owner/orders" tone="amber" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiPackage} label="Total Products" value={stats.totalProducts} to="/app/store-owner/inventory" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiAlertTriangle} label="Low Stock" value={stats.lowStock} to="/app/store-owner/inventory?filter=low_stock" tone="rose" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiAlertTriangle} label="Out of Stock" value={stats.outOfStock} to="/app/store-owner/inventory?filter=out_of_stock" tone="rose" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiClock} label="Expiring in 90d" value={stats.expiringSoon} to="/app/store-owner/inventory?filter=expiring_soon" tone="amber" /></StaggerItem>
-      <StaggerItem><StatCard icon={FiFileText} label="Prescriptions to Review" value={stats.pendingRx} to="/app/store-owner/prescriptions" tone="amber" /></StaggerItem>
-    </Stagger>
+    <div className="space-y-4">
+      <Stagger className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StaggerItem><StatCard icon={FiTrendingUp} label="Today's Sales" value={`₹${stats.todaySales.toFixed(0)}`} tone="emerald" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiShoppingBag} label="Today's Orders" value={stats.todayOrders} to="/app/store-owner/orders" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiClock} label="Pending Orders" value={stats.pendingOrders} to="/app/store-owner/orders" tone="amber" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiPackage} label="Total Products" value={stats.totalProducts} to="/app/store-owner/inventory" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiAlertTriangle} label="Low Stock" value={stats.lowStock} to="/app/store-owner/inventory?filter=low_stock" tone="rose" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiAlertTriangle} label="Out of Stock" value={stats.outOfStock} to="/app/store-owner/inventory?filter=out_of_stock" tone="rose" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiClock} label="Expiring in 90d" value={stats.expiringSoon} to="/app/store-owner/inventory?filter=expiring_soon" tone="amber" /></StaggerItem>
+        <StaggerItem><StatCard icon={FiFileText} label="Prescriptions to Review" value={stats.pendingRx} to="/app/store-owner/prescriptions" tone="amber" /></StaggerItem>
+      </Stagger>
+      <RevenueReconciliation orders={todayOrders} title="Today's money position" />
+    </div>
   );
 }

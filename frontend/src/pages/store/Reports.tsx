@@ -3,6 +3,7 @@ import { FiDownload, FiTrendingUp } from 'react-icons/fi';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { supabase } from '../../lib/supabaseClient';
 import { PageLoader } from '../../components/UIStates';
+import RevenueReconciliation from '../../components/RevenueReconciliation';
 import type { StorePageProps } from '../../types/store';
 import type { Database, OrderStatus } from '../../types/database.types';
 import type { OrderItemWithMedicine } from '../../types/orders';
@@ -16,7 +17,7 @@ const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'month', label: 'This month' }, { key: 'custom', label: 'Custom range' },
 ];
 
-const NON_COMPLETED_STATUSES: OrderStatus[] = ['cancelled', 'refund_requested', 'refunded'];
+const NON_COMPLETED_STATUSES: OrderStatus[] = ['cancelled', 'refund_requested', 'refund_initiated', 'refunded'];
 
 interface CustomRange {
   from: string;
@@ -161,6 +162,8 @@ export default function Reports({ store }: StorePageProps) {
             <div className="glass-card"><p className="text-lg font-extrabold text-[#0f2340]">{cancelled.length}</p><p className="text-[11px] text-[#5b7088] font-bold">Cancelled Orders</p></div>
             <div className="glass-card"><p className="text-lg font-extrabold text-[#0f2340]">₹{avgOrderValue.toFixed(0)}</p><p className="text-[11px] text-[#5b7088] font-bold">Avg Order Value</p></div>
           </div>
+
+          <RevenueReconciliation orders={orders} title="Payment reconciliation" />
 
           <div className="glass-card">
             <h3 className="font-extrabold text-[#0f2340] mb-3 flex items-center gap-2"><FiTrendingUp /> Revenue Trend</h3>

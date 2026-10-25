@@ -1,9 +1,15 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
-import { FiGrid, FiUsers, FiCheckSquare, FiActivity } from 'react-icons/fi';
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import { FiGrid, FiUsers, FiCheckSquare, FiActivity, FiUser } from 'react-icons/fi';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import DashboardShell, { type DashboardNavItem } from '../../components/DashboardShell';
+import PageTransition from '../../components/PageTransition';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
+import VitalsTriage from './VitalsTriage';
+import MedicationTasks from './MedicationTasks';
+import NurseProfile from './NurseProfile';
 import type { Database, PatientStatus, TaskPriority, TaskStatus } from '../../types/database.types';
 
 type PatientRow = Database['public']['Tables']['patients']['Row'];
@@ -14,6 +20,9 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
 const NAV: DashboardNavItem[] = [
   { to: '/app/nurse', end: true, icon: <FiGrid />, label: 'Overview' },
+  { to: '/app/nurse/vitals', icon: <FiActivity />, label: 'Vitals & Triage' },
+  { to: '/app/nurse/medications', icon: <FiCheckSquare />, label: 'Medication Tasks' },
+  { to: '/app/nurse/profile', icon: <FiUser />, label: 'My Profile' },
 ];
 
 const STATUS_DOT: Record<PatientStatus, string> = {
@@ -279,9 +288,17 @@ function Overview() {
 }
 
 export default function NurseDashboard() {
+  const location = useLocation();
   return (
     <DashboardShell nav={NAV} title="Nurse Dashboard">
-      <Overview />
+      <AnimatePresence mode="wait" initial={false}>
+        <Routes location={location} key={location.pathname}>
+          <Route index element={<PageTransition><Overview /></PageTransition>} />
+          <Route path="vitals" element={<PageTransition><VitalsTriage /></PageTransition>} />
+          <Route path="medications" element={<PageTransition><MedicationTasks /></PageTransition>} />
+          <Route path="profile" element={<PageTransition><NurseProfile /></PageTransition>} />
+        </Routes>
+      </AnimatePresence>
     </DashboardShell>
   );
 }

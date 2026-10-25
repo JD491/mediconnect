@@ -1,13 +1,20 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { computeCartTotals } from '../lib/cartMath';
+import { useLocation } from '../lib/LocationContext';
 import type { CartItem, CartGroup, CouponResult, CouponsByStore } from '../types/cart';
 
 const CART_SELECT =
   'cart_item_id, quantity, saved_for_later, ' +
   'stock:stock(stock_id, price, mrp, quantity, store_id, medicine_id, ' +
-  'medicine:medicines(name, prescription_required), ' +
-  'store:stores(store_id, store_name, min_order_amount))';
+  'medicine:medicines(name, prescription_required, form, image_url), ' +
+  'store:stores(store_id, store_name, min_order_amount, latitude, longitude, delivery_radius_km))';
+
+export interface CartGroupOptions {
+  /** Distance in km keyed by store id — absent entries fall back to the flat fee. */
+  distances?: Record<number, number | null>;
+  selfPickup?: boolean;
+}
 
 /**
  * Groups cart items by store and computes each group's totals, prescription
@@ -16,7 +23,7 @@ const CART_SELECT =
  * below) so it's directly unit-testable without mounting the hook, which
  * needs a Supabase client.
  */
-export function computeCartGroups(items: CartItem[], coupons: CouponsByStore): CartGroup[] {
+export function computeCartGroups(items: CartItem[], coupons: CouponsByStore, options: CartGroupOptions = {}): CartGroup[] {
   const byStore = new Map<number, { store: NonNullable<CartItem['stock']['store']>; items: CartItem[] }>();
   for (const i of items) {
     if (!i.stock.store) continue;
@@ -27,7 +34,11 @@ export function computeCartGroups(items: CartItem[], coupons: CouponsByStore): C
   return [...byStore.values()].map((g) => {
     const coupon = coupons[g.store.store_id];
     const discount = coupon?.success ? coupon.discount_amount : 0;
-    const totals = computeCartTotals(g.items.map((i) => ({ quantity: i.quantity, price: i.stock.price })), discount);
+    const totals = computeCartTotals(
+      g.items.map((i) => ({ quantity: i.quantity, price: i.stock.price })),
+      discount,
+      { distanceKm: options.distances?.[g.store.store_id] ?? null, selfPickup: options.selfPickup },
+    );
     const needsRx = g.items.some((i) => i.stock.medicine?.prescription_required);
     const belowMinOrder = g.store.min_order_amount > 0 && totals.subtotal < g.store.min_order_amount;
     const outOfStock = g.items.filter((i) => i.quantity > i.stock.quantity);
@@ -44,6 +55,9 @@ export interface UseCartResult {
   couponInput: Record<number, string>;
   grandTotal: number;
   canPlace: boolean;
+  selfPickup: boolean;
+  setSelfPickup: (value: boolean) => void;
+  storeDistances: Record<number, number | null>;
   reload: () => Promise<void>;
   updateQty: (row: CartItem, quantity: number) => Promise<void>;
   remove: (cartItemId: number) => Promise<void>;
@@ -69,6 +83,8 @@ export function useCart(userId: string | undefined): UseCartResult {
   const [loading, setLoading] = useState(true);
   const [couponInput, setCouponInput] = useState<Record<number, string>>({});
   const [coupons, setCoupons] = useState<CouponsByStore>({});
+  const [selfPickup, setSelfPickup] = useState(false);
+  const { distanceTo } = useLocation();
 
   const reload = useCallback(async () => {
     if (!userId) return;
@@ -105,7 +121,19 @@ export function useCart(userId: string | undefined): UseCartResult {
     await reload();
   }, [reload]);
 
-  const groups = useMemo(() => computeCartGroups(items, coupons), [items, coupons]);
+  const storeDistances = useMemo(() => {
+    const distances: Record<number, number | null> = {};
+    for (const item of items) {
+      if (!item.stock.store) continue;
+      distances[item.stock.store_id] = distanceTo(item.stock.store);
+    }
+    return distances;
+  }, [items, distanceTo]);
+
+  const groups = useMemo(
+    () => computeCartGroups(items, coupons, { distances: storeDistances, selfPickup }),
+    [items, coupons, storeDistances, selfPickup],
+  );
 
   const applyCoupon = useCallback(async (storeId: number, subtotal: number) => {
     const code = (couponInput[storeId] ?? '').trim().toUpperCase();
@@ -142,6 +170,7 @@ export function useCart(userId: string | undefined): UseCartResult {
 
   return {
     items, saved, loading, groups, coupons, couponInput, grandTotal, canPlace,
+    selfPickup, setSelfPickup, storeDistances,
     reload, updateQty, remove, setSavedFlag, setCouponInputForStore, applyCoupon, removeCoupon, clearCoupons,
   };
 }

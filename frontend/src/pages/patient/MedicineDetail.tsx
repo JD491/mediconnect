@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiShield, FiHeart, FiStar, FiPlus, FiAlertCircle } from 'react-icons/fi';
+import { FiShield, FiHeart, FiStar, FiPlus, FiAlertCircle, FiMapPin, FiTruck } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
+import { useLocation } from '../../lib/LocationContext';
+import { formatDistance, isServiceable, speedLabel, deliveryFeeFor, etaLabel } from '../../lib/geolocation';
 import { PageLoader } from '../../components/UIStates';
+import MedicineImage from '../../components/MedicineImage';
 import type { Database } from '../../types/database.types';
 import type { StockOffer, MedicineWithStock, MedicineAlternative, ReviewWithReviewer } from '../../types/medicine';
 
@@ -21,6 +24,7 @@ function Stars({ value }: { value: number }) {
 export default function MedicineDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { distanceTo } = useLocation();
   const [medicine, setMedicine] = useState<MedicineRow | null>(null);
   const [offers, setOffers] = useState<StockOffer[]>([]);
   const [alternatives, setAlternatives] = useState<MedicineAlternative[]>([]);
@@ -44,7 +48,7 @@ export default function MedicineDetail() {
     }
 
     const [offersRes, reviewsRes, wishlistRes, purchaseRes, myReviewRes] = await Promise.all([
-      supabase.from('stock').select('*, store:stores(store_id, store_name, rating, city, approval_status)')
+      supabase.from('stock').select('*, store:stores(store_id, store_name, rating, city, approval_status, latitude, longitude, delivery_radius_km)')
         .eq('medicine_id', medicineId).eq('is_active', true).order('price', { ascending: true }),
       supabase.from('reviews').select('*, reviewer:profiles(name)').eq('target_type', 'medicine').eq('target_id', id).order('created_at', { ascending: false }),
       supabase.from('wishlists').select('wishlist_id').eq('user_id', user.id).eq('medicine_id', medicineId).maybeSingle(),
@@ -52,8 +56,7 @@ export default function MedicineDetail() {
       supabase.from('reviews').select('review_id').eq('target_type', 'medicine').eq('target_id', id).eq('user_id', user.id).maybeSingle(),
     ]);
 
-    setOffers(((offersRes.data ?? []) as unknown as StockOffer[]).filter((o) => o.store?.approval_status === 'approved'));
-    setReviews((reviewsRes.data ?? []) as unknown as ReviewWithReviewer[]);
+    setOffers(((offersRes.data ?? []) as unknown as StockOffer[]).filter((o) => o.store?.approval_status === 'approved'));    setReviews((reviewsRes.data ?? []) as unknown as ReviewWithReviewer[]);
     setInWishlist(!!wishlistRes.data);
     setCanReview((purchaseRes.data ?? []).length > 0);
     setAlreadyReviewed(!!myReviewRes.data);
@@ -125,54 +128,83 @@ export default function MedicineDetail() {
   if (!medicine) return <p className="text-sm text-[#5b7088]">Medicine not found.</p>;
 
   const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+  const displayOffers = [...offers].sort((a, b) => {
+    const aMeta = { d: distanceTo(a.store), ok: isServiceable(distanceTo(a.store), a.store?.delivery_radius_km) };
+    const bMeta = { d: distanceTo(b.store), ok: isServiceable(distanceTo(b.store), b.store?.delivery_radius_km) };
+    if (aMeta.ok !== bMeta.ok) return aMeta.ok ? -1 : 1;
+    if ((aMeta.d ?? Infinity) !== (bMeta.d ?? Infinity)) return (aMeta.d ?? Infinity) - (bMeta.d ?? Infinity);
+    return a.price - b.price;
+  });
 
   return (
     <div className="space-y-4">
       {toast && <div className="glass-card !py-2 !px-4 text-xs font-bold text-brand-700 w-fit">{toast}</div>}
 
       <div className="glass-card">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-extrabold text-[#0f2340]">{medicine.name}</h2>
-            <p className="text-sm text-[#5b7088]">{medicine.generic_name} {medicine.brand ? `· ${medicine.brand}` : ''}</p>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <MedicineImage name={medicine.name} form={medicine.form} src={medicine.image_url} eager
+            className="h-48 w-full sm:w-52 shrink-0 rounded-2xl border border-white/60" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-extrabold text-[#0f2340]">{medicine.name}</h2>
+                <p className="text-sm text-[#5b7088]">{medicine.generic_name} {medicine.brand ? `· ${medicine.brand}` : ''}</p>
+              </div>
+              <motion.button onClick={toggleWishlist} whileTap={{ scale: 0.8 }} animate={inWishlist ? { scale: [1, 1.35, 1] } : { scale: 1 }} transition={{ duration: 0.3 }}
+                className={`shrink-0 ${inWishlist ? 'text-rose-500' : 'text-[#b8c9db]'}`} aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'} aria-pressed={inWishlist}>
+                <FiHeart fill={inWishlist ? 'currentColor' : 'none'} size={22} />
+              </motion.button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-3">
+              {medicine.prescription_required && <span className="badge bg-amber-100 text-amber-700 flex items-center gap-1"><FiShield size={10} /> Prescription required</span>}
+              {medicine.category && <span className="badge bg-brand-100 text-brand-700">{medicine.category}</span>}
+              {medicine.form && <span className="badge bg-slate-100 text-slate-600 capitalize">{medicine.form}</span>}
+              {medicine.dosage && <span className="badge bg-slate-100 text-slate-600">{medicine.dosage}</span>}
+              {medicine.pack_size && <span className="badge bg-slate-100 text-slate-600">{medicine.pack_size}</span>}
+              <span className="badge bg-slate-100 text-slate-600">GST {medicine.gst_rate}%</span>
+            </div>
+
+            {reviews.length > 0 && (
+              <div className="flex items-center gap-2 mt-3">
+                <Stars value={avgRating} /> <span className="text-xs text-[#5b7088] font-bold">{avgRating.toFixed(1)} ({reviews.length} reviews)</span>
+              </div>
+            )}
+
+            {medicine.description && <p className="text-sm text-[#33475b] mt-3">{medicine.description}</p>}
+            {medicine.salt_composition && medicine.salt_composition !== '—' && <p className="text-xs text-[#5b7088] mt-2"><b>Composition:</b> {medicine.salt_composition}</p>}
+            {medicine.manufacturer && <p className="text-xs text-[#5b7088] mt-2">Manufacturer: {medicine.manufacturer}</p>}
           </div>
-          <motion.button onClick={toggleWishlist} whileTap={{ scale: 0.8 }} animate={inWishlist ? { scale: [1, 1.35, 1] } : { scale: 1 }} transition={{ duration: 0.3 }}
-            className={`shrink-0 ${inWishlist ? 'text-rose-500' : 'text-[#b8c9db]'}`} aria-label={inWishlist ? 'Remove from wishlist' : 'Add to wishlist'} aria-pressed={inWishlist}>
-            <FiHeart fill={inWishlist ? 'currentColor' : 'none'} size={22} />
-          </motion.button>
         </div>
-
-        <div className="flex flex-wrap gap-2 mt-3">
-          {medicine.prescription_required && <span className="badge bg-amber-100 text-amber-700 flex items-center gap-1"><FiShield size={10} /> Prescription required</span>}
-          {medicine.category && <span className="badge bg-brand-100 text-brand-700">{medicine.category}</span>}
-          {medicine.form && <span className="badge bg-slate-100 text-slate-600 capitalize">{medicine.form}</span>}
-          {medicine.dosage && <span className="badge bg-slate-100 text-slate-600">{medicine.dosage}</span>}
-          {medicine.pack_size && <span className="badge bg-slate-100 text-slate-600">{medicine.pack_size}</span>}
-        </div>
-
-        {reviews.length > 0 && (
-          <div className="flex items-center gap-2 mt-3">
-            <Stars value={avgRating} /> <span className="text-xs text-[#5b7088] font-bold">{avgRating.toFixed(1)} ({reviews.length} reviews)</span>
-          </div>
-        )}
-
-        {medicine.description && <p className="text-sm text-[#33475b] mt-3">{medicine.description}</p>}
-        {medicine.manufacturer && <p className="text-xs text-[#5b7088] mt-2">Manufacturer: {medicine.manufacturer}</p>}
       </div>
 
       <div className="glass-card">
         <h3 className="font-extrabold text-[#0f2340] mb-3">Available at {offers.length} store{offers.length !== 1 ? 's' : ''}</h3>
         <div className="space-y-2">
-          {offers.map((o) => (
+          {displayOffers.map((o) => {
+            const distance = distanceTo(o.store);
+            const serviceable = isServiceable(distance, o.store?.delivery_radius_km);
+            const fee = deliveryFeeFor(o.price, distance);
+            const pct = o.mrp > o.price ? Math.round(((o.mrp - o.price) / o.mrp) * 100) : 0;
+            return (
             <div key={o.stock_id} className="flex items-center justify-between p-3 rounded-xl bg-white/50 border border-white/40">
               <div>
                 <p className="text-sm font-bold text-[#0f2340]">{o.store?.store_name}</p>
                 <p className="text-[11px] text-[#5b7088]">{o.store?.city || ''} {o.store?.rating ? `· ${o.store.rating}★` : ''}</p>
+                <p className="text-[10px] font-bold text-[#5b7088] flex items-center gap-1 mt-0.5">
+                  <FiMapPin className={serviceable ? 'text-emerald-500' : 'text-amber-500'} />
+                  {distance != null ? formatDistance(distance) : 'Distance unavailable'}
+                  {distance != null && <> · {serviceable ? speedLabel(distance) : 'Pickup only'}</>}
+                </p>
+                {serviceable && (
+                  <p className="text-[10px] text-[#8a9bb0] flex items-center gap-1"><FiTruck /> {fee === 0 ? 'Free delivery' : `₹${fee} delivery`} · {etaLabel(distance)}</p>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <p className="font-extrabold text-[#0f2340]">₹{o.price}</p>
                   {o.mrp > o.price && <p className="text-[11px] text-[#8a9bb0] line-through">₹{o.mrp}</p>}
+                  {pct > 0 && <p className="text-[10px] font-bold text-emerald-600">{pct}% OFF</p>}
                 </div>
                 {o.quantity > 0 ? (
                   <button onClick={() => addToCart(o.stock_id)} className="btn-primary !py-1.5 !px-3 !text-xs flex items-center gap-1"><FiPlus /> Add</button>
@@ -181,7 +213,8 @@ export default function MedicineDetail() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
           {offers.length === 0 && <p className="text-sm text-[#5b7088]">No store currently stocks this medicine.</p>}
         </div>
       </div>

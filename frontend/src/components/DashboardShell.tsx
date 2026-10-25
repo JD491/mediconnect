@@ -5,6 +5,7 @@ import { FiLogOut, FiMenu, FiX } from 'react-icons/fi';
 import { useAuth } from '../lib/AuthContext';
 import NotificationBell from './NotificationBell';
 import AmbientBackground from './AmbientBackground';
+import DeliveryBar from './DeliveryBar';
 
 export interface DashboardNavItem {
   to: string;
@@ -108,12 +109,13 @@ export default function DashboardShell({ nav, title, children }: DashboardShellP
       </AnimatePresence>
 
       <main className="flex-1 p-4 pt-20 md:pt-4 md:pl-0">
-        <div className="glass-card mb-4 flex items-center justify-between">
+        <div className="glass-card mb-4 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-xl font-extrabold text-[#0f2340]">{title}</h1>
             <p className="text-xs text-[#5b7088] font-medium">Welcome back, {profile?.name?.split(' ')[0] || '...'}</p>
           </div>
           <div className="flex items-center gap-3">
+            <DeliveryBar />
             <NotificationBell />
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 flex items-center justify-center text-white font-bold">
               {profile?.name?.[0] || '?'}

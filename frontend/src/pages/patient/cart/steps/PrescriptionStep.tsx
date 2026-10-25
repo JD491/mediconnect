@@ -1,5 +1,5 @@
 import type { ChangeEvent } from 'react';
-import { FiShield, FiUpload, FiCheck } from 'react-icons/fi';
+import { FiShield, FiUpload, FiCheck, FiX } from 'react-icons/fi';
 import type { CartGroup, RxFilesByStore } from '../../../../types/cart';
 
 const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -9,10 +9,11 @@ interface PrescriptionStepProps {
   groups: CartGroup[];
   rxFiles: RxFilesByStore;
   onFileSelected: (storeId: number, file: File) => void;
+  onFileRemoved?: (storeId: number) => void;
   onError: (message: string) => void;
 }
 
-export default function PrescriptionStep({ groups, rxFiles, onFileSelected, onError }: PrescriptionStepProps) {
+export default function PrescriptionStep({ groups, rxFiles, onFileSelected, onFileRemoved, onError }: PrescriptionStepProps) {
   const needsRxGroups = groups.filter((g) => g.needsRx);
 
   const handleFile = (storeId: number) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -38,11 +39,19 @@ export default function PrescriptionStep({ groups, rxFiles, onFileSelected, onEr
           {needsRxGroups.map((g) => (
             <div key={g.store.store_id} className="p-3 rounded-xl bg-amber-50 border border-amber-200">
               <p className="text-xs font-bold text-amber-700 flex items-center gap-1.5 mb-2"><FiShield /> {g.store.store_name} requires a prescription</p>
-              <label className="btn-ghost !py-1.5 !text-xs inline-flex items-center gap-1.5 cursor-pointer">
-                <FiUpload /> {rxFiles[g.store.store_id]?.name || 'Upload prescription (image or PDF, max 5MB)'}
-                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
-                  onChange={handleFile(g.store.store_id)} />
-              </label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <label className="btn-ghost !py-1.5 !text-xs inline-flex items-center gap-1.5 cursor-pointer max-w-full">
+                  <FiUpload /> <span className="truncate">{rxFiles[g.store.store_id]?.name || 'Upload prescription (image or PDF, max 5MB)'}</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden"
+                    onChange={handleFile(g.store.store_id)} />
+                </label>
+                {rxFiles[g.store.store_id] && onFileRemoved && (
+                  <button type="button" onClick={() => onFileRemoved(g.store.store_id)}
+                    className="btn-ghost !py-1.5 !px-2 !text-xs !text-rose-600 flex items-center gap-1">
+                    <FiX /> Remove
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

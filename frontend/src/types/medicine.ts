@@ -8,13 +8,13 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 
 /** stock.* joined with store:stores(...) — the shape used by MedicineStore/MedicineDetail offer lists. */
 export interface StockOffer extends StockRow {
-  store: Pick<StoreRow, 'store_id' | 'store_name' | 'rating' | 'approval_status' | 'city'> | null;
+  store: (Pick<StoreRow, 'store_id' | 'store_name' | 'rating' | 'approval_status' | 'city'> & Partial<Pick<StoreRow, 'latitude' | 'longitude' | 'delivery_radius_km'>>) | null;
 }
 
 /** stock joined with medicine + store, as fetched by MedicineStore's catalog query. */
 export interface StockWithMedicineAndStore extends StockRow {
-  medicine: Pick<MedicineRow, 'medicine_id' | 'name' | 'generic_name' | 'brand' | 'category' | 'prescription_required' | 'description' | 'is_active'> | null;
-  store: Pick<StoreRow, 'store_id' | 'store_name' | 'rating' | 'approval_status'> | null;
+  medicine: Pick<MedicineRow, 'medicine_id' | 'name' | 'generic_name' | 'brand' | 'category' | 'prescription_required' | 'description' | 'is_active' | 'manufacturer' | 'form' | 'pack_size' | 'salt_composition' | 'gst_rate' | 'image_url'> | null;
+  store: (Pick<StoreRow, 'store_id' | 'store_name' | 'rating' | 'approval_status'> & Partial<Pick<StoreRow, 'city' | 'latitude' | 'longitude' | 'delivery_radius_km'>>) | null;
 }
 
 export interface MedicineCatalogGroup {

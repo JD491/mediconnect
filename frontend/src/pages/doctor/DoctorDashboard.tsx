@@ -1,13 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { FiGrid, FiCalendar, FiUsers, FiClock, FiUser } from 'react-icons/fi';
+import { FiGrid, FiCalendar, FiUsers, FiClock, FiUser, FiVideo, FiFileText } from 'react-icons/fi';
 import DashboardShell, { type DashboardNavItem } from '../../components/DashboardShell';
 import PageTransition from '../../components/PageTransition';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import Availability from './Availability';
 import DoctorProfile from './DoctorProfile';
+import Consultations from './Consultations';
+import WritePrescription from './WritePrescription';
+import Patients from './Patients';
 import type { Database } from '../../types/database.types';
 import type { DoctorRow } from '../../types/doctor';
 
@@ -18,6 +21,9 @@ type PatientRow = Database['public']['Tables']['patients']['Row'];
 
 const NAV: DashboardNavItem[] = [
   { to: '/app/doctor', end: true, icon: <FiGrid />, label: 'Dashboard' },
+  { to: '/app/doctor/consultations', icon: <FiVideo />, label: 'Consultations' },
+  { to: '/app/doctor/write-prescription', icon: <FiFileText />, label: 'Prescriptions' },
+  { to: '/app/doctor/patients', icon: <FiUsers />, label: 'Patients' },
   { to: '/app/doctor/availability', icon: <FiClock />, label: 'Availability' },
   { to: '/app/doctor/profile', icon: <FiUser />, label: 'Profile' },
 ];
@@ -141,6 +147,9 @@ export default function DoctorDashboard() {
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
           <Route index element={<PageTransition><Overview doctorId={doctor?.doctor_id} /></PageTransition>} />
+          <Route path="consultations" element={<PageTransition>{doctor ? <Consultations doctor={doctor} /> : null}</PageTransition>} />
+          <Route path="write-prescription" element={<PageTransition>{doctor ? <WritePrescription doctor={doctor} /> : null}</PageTransition>} />
+          <Route path="patients" element={<PageTransition>{doctor ? <Patients doctor={doctor} /> : null}</PageTransition>} />
           <Route path="availability" element={<PageTransition><Availability doctorId={doctor?.doctor_id} /></PageTransition>} />
           <Route path="profile" element={<PageTransition>{doctor ? <DoctorProfile doctor={doctor} onSaved={loadDoctor} /> : null}</PageTransition>} />
         </Routes>

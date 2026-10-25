@@ -23,7 +23,7 @@ function makeItem(overrides: {
       quantity: overrides.stockQuantity ?? 100,
       store_id: overrides.storeId,
       medicine_id: overrides.cart_item_id * 100,
-      medicine: { name: `Medicine ${overrides.cart_item_id}`, prescription_required: overrides.prescriptionRequired ?? false },
+      medicine: { name: `Medicine ${overrides.cart_item_id}`, prescription_required: overrides.prescriptionRequired ?? false, form: 'tablet', image_url: null },
       store: { store_id: overrides.storeId, store_name: overrides.storeName ?? `Store ${overrides.storeId}`, min_order_amount: overrides.minOrderAmount ?? 0 },
     },
   };

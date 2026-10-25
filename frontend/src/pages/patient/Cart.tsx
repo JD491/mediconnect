@@ -50,7 +50,20 @@ export default function Cart() {
           <AnimatePresence mode="wait">
             <motion.div key={checkout.step} initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: 0.2 }}>
               {checkout.step === 1 && (
-                <AddressStep form={checkout.form} onChange={checkout.updateForm} />
+                <AddressStep
+                  form={checkout.form}
+                  onChange={checkout.updateForm}
+                  selfPickup={cart.selfPickup}
+                  onSelfPickupChange={(value) => {
+                    cart.setSelfPickup(value);
+                    checkout.updateForm({
+                      self_pickup: value,
+                      payment_method: value
+                        ? 'self_pickup'
+                        : checkout.form.payment_method === 'self_pickup' ? 'online' : checkout.form.payment_method,
+                    });
+                  }}
+                />
               )}
 
               {checkout.step === 2 && (
@@ -58,6 +71,7 @@ export default function Cart() {
                   groups={cart.groups}
                   rxFiles={checkout.rxFiles}
                   onFileSelected={checkout.setRxFileForStore}
+                  onFileRemoved={checkout.clearRxFileForStore}
                   onError={checkout.setError}
                 />
               )}
@@ -81,11 +95,15 @@ export default function Cart() {
               {checkout.step === 4 && (
                 <PaymentStep
                   paymentMethod={checkout.form.payment_method}
-                  onChangeMethod={(payment_method) => checkout.updateForm({ payment_method })}
+                  onChangeMethod={(payment_method) => {
+                    if (payment_method === 'self_pickup' && !cart.selfPickup) cart.setSelfPickup(true);
+                    checkout.updateForm({ payment_method, self_pickup: payment_method === 'self_pickup' ? true : cart.selfPickup });
+                  }}
                   grandTotal={cart.grandTotal}
                   error={checkout.error}
                   placing={checkout.placing}
                   orderCount={cart.groups.length}
+                  selfPickup={cart.selfPickup}
                   onPlaceOrders={checkout.placeOrders}
                 />
               )}
@@ -93,6 +111,7 @@ export default function Cart() {
               {checkout.step === 5 && (
                 <ConfirmationStep
                   placedOrderIds={checkout.placedOrderIds}
+                  paymentErrors={checkout.paymentErrors}
                   onContinueShopping={() => navigate('/app/store/medicines')}
                   onTrackOrders={() => navigate('/app/store/orders')}
                 />

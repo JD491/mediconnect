@@ -21,7 +21,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pending: 'Pending', confirmed: 'Confirmed', preparing: 'Preparing',
   ready_for_dispatch: 'Ready for Dispatch', out_for_delivery: 'Out for Delivery',
   delivered: 'Delivered', cancelled: 'Cancelled',
-  refund_requested: 'Refund Requested', refunded: 'Refunded',
+  refund_requested: 'Refund Requested', refund_initiated: 'Refund Initiated', refunded: 'Refunded',
 };
 
 export const ORDER_STATUS_TONES: Record<OrderStatus, string> = {
@@ -29,7 +29,7 @@ export const ORDER_STATUS_TONES: Record<OrderStatus, string> = {
   preparing: 'bg-amber-100 text-amber-700', ready_for_dispatch: 'bg-amber-100 text-amber-700',
   out_for_delivery: 'bg-brand-100 text-brand-700', delivered: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-rose-100 text-rose-600', refund_requested: 'bg-orange-100 text-orange-700',
-  refunded: 'bg-slate-200 text-slate-600',
+  refund_initiated: 'bg-amber-100 text-amber-700', refunded: 'bg-slate-200 text-slate-600',
 };
 
 export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -44,7 +44,7 @@ export const PAYMENT_STATUS_TONES: Record<PaymentStatus, string> = {
   cod_pending: 'bg-amber-100 text-amber-700', cod_collected: 'bg-emerald-100 text-emerald-700',
 };
 
-export const ALL_ORDER_STATUSES: OrderStatus[] = [...ORDER_STATUS_FLOW, 'cancelled', 'refund_requested', 'refunded'];
+export const ALL_ORDER_STATUSES: OrderStatus[] = [...ORDER_STATUS_FLOW, 'cancelled', 'refund_requested', 'refund_initiated', 'refunded'];
 
 /**
  * Client-side mirror of the database's `trg_enforce_order_status_transitions`
@@ -61,7 +61,8 @@ export function isValidOrderTransition(from: OrderStatus, to: OrderStatus): bool
     ready_for_dispatch: ['out_for_delivery', 'cancelled'],
     out_for_delivery: ['delivered', 'cancelled'],
     delivered: ['refund_requested'],
-    refund_requested: ['refunded'],
+    refund_requested: ['refund_initiated', 'refunded'],
+    refund_initiated: ['refunded'],
   };
   return graph[from]?.includes(to) ?? false;
 }

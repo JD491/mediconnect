@@ -16,19 +16,27 @@
 
 export type OrderStatus =
   | 'pending' | 'confirmed' | 'preparing' | 'ready_for_dispatch'
-  | 'out_for_delivery' | 'delivered' | 'cancelled' | 'refund_requested' | 'refunded';
+  | 'out_for_delivery' | 'delivered' | 'cancelled' | 'refund_requested' | 'refund_initiated' | 'refunded';
 
 export type PaymentStatus =
   | 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cod_pending' | 'cod_collected';
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended' | 'under_review' | 'expired';
 
-export type MedicineForm = 'tablet' | 'capsule' | 'syrup' | 'injection' | 'cream' | 'drops' | 'other';
+export type MedicineForm =
+  | 'tablet' | 'capsule' | 'syrup' | 'injection' | 'cream' | 'drops' | 'other'
+  | 'inhaler' | 'gel' | 'device' | 'strips' | 'powder';
+
+/** How an order is paid for. Online = UPI/card/netbanking/wallet via Razorpay or the demo gateway. */
+export type OrderPaymentMethod =
+  | 'cod' | 'online' | 'upi_offline' | 'self_pickup' | 'clinic_counter';
+
+export type ConsultationMode = 'online' | 'in_person';
 
 export type UserRole = 'customer' | 'store_owner' | 'doctor' | 'nurse' | 'admin';
 export type UserStatus = 'active' | 'suspended';
 export type PatientStatus = 'stable' | 'monitoring' | 'critical' | 'discharged';
-export type TaskStatus = 'pending' | 'in_progress' | 'done';
+export type TaskStatus = 'pending' | 'in_progress' | 'done' | 'escalated';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 // Not a DB constraint (the column is plain text), but this is the enumerated
@@ -48,6 +56,15 @@ export interface SymptomCheckResultItem {
   matchedSymptoms: string[];
 }
 
+/** One medication line in a doctor-issued e-prescription. */
+export interface EPrescriptionItem {
+  medicine_id: number | null;
+  medicine_name: string;
+  dosage: string;
+  duration: string;
+  instructions: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -55,6 +72,8 @@ export interface Database {
         Row: {
           id: string; name: string; email: string; phone: string | null;
           role: UserRole; status: UserStatus; address: string | null; created_at: string;
+          avatar_url: string | null; date_of_birth: string | null; gender: string | null;
+          blood_group: string | null; allergies: string[];
         };
         Insert: Partial<Database['public']['Tables']['profiles']['Row']> & { id: string; name: string; email: string; role: UserRole };
         Update: Partial<Database['public']['Tables']['profiles']['Row']>;
@@ -68,6 +87,7 @@ export interface Database {
           email: string | null; city: string | null; pincode: string | null; description: string | null;
           opening_time: string | null; closing_time: string | null; weekly_holidays: string[];
           delivery_radius_km: number | null; min_order_amount: number; is_open: boolean; created_at: string;
+          latitude: number | null; longitude: number | null;
         };
         Insert: Partial<Database['public']['Tables']['stores']['Row']> & { owner_id: string; store_name: string };
         Update: Partial<Database['public']['Tables']['stores']['Row']>;
@@ -79,7 +99,7 @@ export interface Database {
           category: string | null; manufacturer: string | null; description: string | null;
           image_url: string | null; prescription_required: boolean; dosage: string | null;
           form: MedicineForm | null; pack_size: string | null; created_by: string | null;
-          is_active: boolean; created_at: string;
+          is_active: boolean; created_at: string; salt_composition: string | null; gst_rate: number;
         };
         Insert: Partial<Database['public']['Tables']['medicines']['Row']> & { name: string };
         Update: Partial<Database['public']['Tables']['medicines']['Row']>;
@@ -105,11 +125,15 @@ export interface Database {
       orders: {
         Row: {
           order_id: number; user_id: string; store_id: number; delivery_address: string;
-          payment_method: 'cod' | 'online'; payment_status: PaymentStatus; delivery_fee: number;
+          payment_method: OrderPaymentMethod; payment_status: PaymentStatus; delivery_fee: number;
           discount_amount: number; coupon_code: string | null; total_amount: number; status: OrderStatus;
           customer_name: string | null; customer_phone: string | null; cancellation_reason: string | null;
           razorpay_order_id: string | null; razorpay_payment_id: string | null; payment_verified: boolean;
-          created_at: string;
+          created_at: string; pickup_token: string | null; offline_collection_ref: string | null;
+          payment_ref: string | null; payment_failure_reason: string | null; delivery_distance_km: number | null;
+          delivery_partner_name: string | null; delivery_partner_phone: string | null;
+          delivery_partner_lat: number | null; delivery_partner_lng: number | null;
+          self_pickup: boolean;
         };
         Insert: Partial<Database['public']['Tables']['orders']['Row']> & { user_id: string; store_id: number; delivery_address: string; total_amount: number };
         Update: Partial<Database['public']['Tables']['orders']['Row']>;
@@ -126,6 +150,8 @@ export interface Database {
           prescription_id: number; order_id: number; customer_id: string; store_id: number;
           file_path: string; status: ApprovalStatus; rejection_reason: string | null;
           reviewed_by: string | null; reviewed_at: string | null; superseded: boolean; created_at: string;
+          diagnosis: string | null; notes: string | null; prescribed_by: string | null;
+          follow_up_date: string | null; items: unknown[];
         };
         Insert: Partial<Database['public']['Tables']['prescriptions']['Row']> & { order_id: number; customer_id: string; store_id: number; file_path: string };
         Update: Partial<Database['public']['Tables']['prescriptions']['Row']>;
@@ -169,6 +195,7 @@ export interface Database {
           registration_number: string | null; experience_years: number; consultation_fee: number;
           approval_status: ApprovalStatus; rating: number | null; hospital_clinic: string | null;
           bio: string | null; profile_image_url: string | null;
+          online_consultation: boolean; languages: string[];
         };
         Insert: Partial<Database['public']['Tables']['doctors']['Row']> & { user_id: string; specialization: string };
         Update: Partial<Database['public']['Tables']['doctors']['Row']>;
@@ -184,9 +211,26 @@ export interface Database {
         Row: {
           appointment_id: number; doctor_id: number; patient_id: string; appointment_date: string;
           appointment_time: string; status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'; reason: string | null;
+          payment_method: OrderPaymentMethod; payment_status: PaymentStatus; payment_ref: string | null;
+          razorpay_order_id: string | null; razorpay_payment_id: string | null; payment_verified: boolean;
+          consultation_mode: ConsultationMode; meeting_link: string | null; notes: string | null;
+          triage: string | null;
         };
         Insert: Partial<Database['public']['Tables']['appointments']['Row']> & { doctor_id: number; patient_id: string; appointment_date: string; appointment_time: string };
         Update: Partial<Database['public']['Tables']['appointments']['Row']>;
+        Relationships: [];
+      };
+      e_prescriptions: {
+        Row: {
+          e_prescription_id: number; doctor_id: number; appointment_id: number | null;
+          patient_profile_id: string | null; patient_id: number | null;
+          diagnosis: string; advice: string | null; follow_up_date: string | null;
+          items: EPrescriptionItem[];
+          vitals: Record<string, number | null> | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['e_prescriptions']['Row']> & { doctor_id: number; diagnosis: string };
+        Update: Partial<Database['public']['Tables']['e_prescriptions']['Row']>;
         Relationships: [];
       };
       patients: {
@@ -194,6 +238,7 @@ export interface Database {
           patient_id: number; profile_id: string | null; name: string; age: number | null; gender: string | null;
           primary_nurse_id: string | null; primary_doctor_id: number | null; room_number: string | null;
           status: PatientStatus; admitted_at: string; discharged_at: string | null;
+          blood_group: string | null; allergies: string[]; phone: string | null;
         };
         Insert: Partial<Database['public']['Tables']['patients']['Row']> & { name: string };
         Update: Partial<Database['public']['Tables']['patients']['Row']>;
@@ -204,6 +249,7 @@ export interface Database {
           vital_id: number; patient_id: number; recorded_by: string | null; temperature: number | null;
           bp_systolic: number | null; bp_diastolic: number | null; heart_rate: number | null;
           spo2: number | null; respiratory_rate: number | null; recorded_at: string;
+          glucose: number | null; weight_kg: number | null; pain_score: number | null;
         };
         Insert: Partial<Database['public']['Tables']['vitals']['Row']> & { patient_id: number };
         Update: Partial<Database['public']['Tables']['vitals']['Row']>;
@@ -214,6 +260,10 @@ export interface Database {
           task_id: number; patient_id: number | null; assigned_to: string | null; created_by: string | null;
           title: string; description: string | null; status: TaskStatus; priority: TaskPriority;
           due_at: string | null; created_at: string;
+          task_type: 'medication' | 'observation' | 'procedure' | 'walk_in' | 'other';
+          medication_name: string | null; dosage: string | null; scheduled_at: string | null;
+          administered_at: string | null; escalated_reason: string | null;
+          fee_amount: number | null; fee_verified: boolean; fee_ref: string | null;
         };
         Insert: Partial<Database['public']['Tables']['tasks']['Row']> & { title: string };
         Update: Partial<Database['public']['Tables']['tasks']['Row']>;
@@ -235,6 +285,7 @@ export interface Database {
         Row: {
           contact_id: number; name: string; type: EmergencyContactType; phone: string;
           address: string | null; latitude: number | null; longitude: number | null;
+          city: string | null; is_24_7: boolean;
         };
         Insert: Partial<Database['public']['Tables']['emergency_contacts']['Row']> & { name: string; phone: string; type: string };
         Update: Partial<Database['public']['Tables']['emergency_contacts']['Row']>;

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Capsule medicine illustration">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef9ff"/><stop offset="1" stop-color="#d9ecfa"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4bf"/><stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="white" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfe1f2"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#0f2340" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg)"/>
+  <circle cx="200" cy="150" r="112" fill="#ffffff" opacity="0.4"/>
+  <g filter="url(#shadow)" transform="rotate(-28 200 150)">
+    <rect x="112" y="112" width="176" height="76" rx="38" fill="url(#white)"/>
+    <path d="M112 150h88v-38a38 38 0 0 1 0 0v76a38 38 0 0 1-38 38h-50z" fill="url(#teal)" opacity="0.95"/>
+    <rect x="112" y="112" width="88" height="76" rx="38" fill="url(#teal)"/>
+    <rect x="112" y="150" width="88" height="38" fill="url(#teal)"/>
+    <rect x="196" y="112" width="10" height="76" fill="#0f766e" opacity="0.25"/>
+    <ellipse cx="152" cy="132" rx="30" ry="8" fill="#ffffff" opacity="0.35"/>
+    <rect x="214" y="128" width="54" height="9" rx="4.5" fill="#ffffff" opacity="0.7"/>
+  </g>
+  <g fill="#8ab4d8" opacity="0.55">
+    <circle cx="86" cy="88" r="5"/><circle cx="320" cy="80" r="7"/><circle cx="318" cy="226" r="4"/><circle cx="78" cy="212" r="6"/>
+  </g>
+</svg>

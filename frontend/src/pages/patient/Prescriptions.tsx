@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiFileText, FiExternalLink, FiUpload, FiAlertCircle } from 'react-icons/fi';
+import { FiFileText, FiExternalLink, FiUpload, FiAlertCircle, FiCamera, FiChevronRight } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
 import { PageLoader, EmptyState } from '../../components/UIStates';
@@ -70,11 +71,17 @@ export default function Prescriptions() {
   if (rows === null) return <PageLoader label="Loading your prescriptions..." />;
 
   if (rows.length === 0) {
-    return <EmptyState icon={FiFileText} title="No prescriptions yet" description="Prescriptions you upload at checkout will appear here for tracking." />;
+    return (
+      <div className="space-y-3">
+        <ScanRxBanner />
+        <EmptyState icon={FiFileText} title="No prescriptions yet" description="Scan a paper prescription or upload one at checkout — both will appear here for tracking." />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3">
+      <ScanRxBanner />
       {rows.map((r, i) => (
         <motion.div key={r.prescription_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="glass-card">
           <div className="flex items-center justify-between mb-2">
@@ -108,5 +115,20 @@ export default function Prescriptions() {
       ))}
       {error && <p className="text-rose-500 text-xs font-semibold" role="alert">{error}</p>}
     </div>
+  );
+}
+
+function ScanRxBanner() {
+  return (
+    <Link to="/app/store/prescription-scan" className="glass-card flex flex-wrap items-center justify-between gap-3 card-hover !bg-brand-50/60 border-brand-100">
+      <div className="flex items-start gap-3">
+        <span className="h-10 w-10 rounded-xl bg-brand-600 text-white flex items-center justify-center shrink-0"><FiCamera /></span>
+        <div>
+          <p className="font-extrabold text-[#0f2340]">Scan a paper prescription</p>
+          <p className="text-xs text-[#5b7088]">Read it with AI, match medicines to nearby stock and attach the Rx to checkout in one go.</p>
+        </div>
+      </div>
+      <span className="btn-primary !py-2 !px-4 !text-xs flex items-center gap-1">Scan now <FiChevronRight /></span>
+    </Link>
   );
 }

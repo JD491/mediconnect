@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiShoppingBag, FiX, FiFileText, FiCheckCircle } from 'react-icons/fi';
+import { FiShoppingBag, FiX, FiFileText, FiCheckCircle, FiSmartphone } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { ORDER_STATUS_NEXT, ORDER_STATUS_LABELS, ORDER_STATUS_TONES, PAYMENT_STATUS_LABELS, PAYMENT_STATUS_TONES, ALL_ORDER_STATUSES } from '../../lib/orderStatus';
+import { verifyOfflineCollection, initiateOrderRefund, completeOrderRefund } from '../../lib/paymentFlows';
 import type { StorePageProps } from '../../types/store';
 import type { Database, OrderStatus } from '../../types/database.types';
 import type { OrderItemWithMedicine } from '../../types/orders';
@@ -27,6 +28,11 @@ export default function Orders({ store }: StorePageProps) {
   const [cancelReason, setCancelReason] = useState('');
   const [showCancel, setShowCancel] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [showVerify, setShowVerify] = useState(false);
+  const [verifyMode, setVerifyMode] = useState<'cash' | 'upi'>('cash');
+  const [collectedBy, setCollectedBy] = useState('');
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
 
   const load = useCallback(async () => {
     let q = supabase.from('orders').select('*, customer:profiles(name, phone)').eq('store_id', store.store_id).order('created_at', { ascending: false });
@@ -67,16 +73,46 @@ export default function Orders({ store }: StorePageProps) {
     if (detail?.order_id === o.order_id) setDetail((d) => (d ? { ...d, status: next } : d));
   };
 
-  const markCodCollected = async (o: OrderWithCustomer) => {
-    await supabase.from('orders').update({ payment_status: 'cod_collected' }).eq('order_id', o.order_id);
-    load();
-    if (detail?.order_id === o.order_id) setDetail((d) => (d ? { ...d, payment_status: 'cod_collected' } : d));
+  const verifyOffline = async () => {
+    if (!detail) return;
+    setVerifyBusy(true);
+    setActionError('');
+    try {
+      const { reference } = await verifyOfflineCollection(detail.order_id, verifyMode, collectedBy.trim() || undefined);
+      setActionMsg(`Offline ${verifyMode === 'cash' ? 'cash' : 'UPI'} payment verified · ${reference}`);
+      setShowVerify(false);
+      setCollectedBy('');
+      load();
+      setDetail((d) => (d ? { ...d, payment_status: verifyMode === 'cash' ? 'cod_collected' : 'paid', payment_verified: true, payment_ref: reference } : d));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not verify the offline payment.');
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  const initiateRefund = async (o: OrderWithCustomer) => {
+    setActionError('');
+    try {
+      const { reference } = await initiateOrderRefund(o.order_id);
+      setActionMsg(`Refund initiated · ${reference}`);
+      load();
+      setDetail((d) => (d ? { ...d, status: 'refund_initiated', payment_status: 'processing', payment_ref: reference } : d));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not initiate the refund.');
+    }
   };
 
   const markRefunded = async (o: OrderWithCustomer) => {
-    await supabase.from('orders').update({ status: 'refunded', payment_status: 'refunded' }).eq('order_id', o.order_id);
-    load();
-    setDetail(null);
+    setActionError('');
+    try {
+      await completeOrderRefund(o.order_id);
+      setActionMsg(`Order #${o.order_id} refunded.`);
+      load();
+      setDetail(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not mark the order refunded.');
+    }
   };
 
   const cancel = async () => {
@@ -163,9 +199,22 @@ export default function Orders({ store }: StorePageProps) {
                 <span className={`badge ${PAYMENT_STATUS_TONES[detail.payment_status]}`}>{PAYMENT_STATUS_LABELS[detail.payment_status]}</span>
                 <span className="text-[11px] text-[#5b7088] uppercase font-bold">{detail.payment_method}</span>
               </div>
+              {(detail.payment_ref || detail.offline_collection_ref) && (
+                <p className="text-[11px] text-[#5b7088] mb-1">
+                  Payment ref: <span className="font-mono font-bold text-[#0f2340]">{detail.payment_ref || detail.offline_collection_ref}</span>
+                  {detail.payment_verified && <span className="ml-2 text-emerald-600 font-bold">✓ Verified</span>}
+                </p>
+              )}
+              {detail.pickup_token && (
+                <p className="text-[11px] text-[#5b7088] mb-1">Pickup token: <span className="font-mono font-bold text-brand-700">{detail.pickup_token}</span></p>
+              )}
+              {detail.payment_status === 'failed' && (
+                <p className="text-xs text-rose-500 font-semibold mb-1">Online payment failed — customer can retry or switch to COD.</p>
+              )}
               {detail.status === 'cancelled' && detail.cancellation_reason && (
                 <p className="text-xs text-rose-500 mb-3">Reason: {detail.cancellation_reason}</p>
               )}
+              {actionMsg && <p className="text-xs text-emerald-600 font-semibold mb-3">{actionMsg}</p>}
               {actionError && <p className="text-xs text-rose-500 font-semibold mb-3">{actionError}</p>}
 
               <div className="flex flex-wrap gap-2">
@@ -175,15 +224,38 @@ export default function Orders({ store }: StorePageProps) {
                 {!TERMINAL_STATUSES.includes(detail.status) && (
                   <button onClick={() => setShowCancel(true)} className="btn-ghost flex-1 min-w-[140px] !text-rose-500">Cancel Order</button>
                 )}
-                {detail.payment_method === 'cod' && detail.payment_status === 'cod_pending' && detail.status === 'delivered' && (
-                  <button onClick={() => markCodCollected(detail)} className="btn-primary flex-1 min-w-[140px] flex items-center justify-center gap-1.5">
-                    <FiCheckCircle /> Mark COD Collected
+                {detail.status === 'delivered' && (detail.payment_status === 'cod_pending' || detail.payment_status === 'pending') &&
+                  ['cod', 'upi_offline', 'self_pickup'].includes(detail.payment_method) && (
+                  <button onClick={() => { setShowVerify(true); setVerifyMode(detail.payment_method === 'upi_offline' ? 'upi' : 'cash'); }} className="btn-primary flex-1 min-w-[140px] flex items-center justify-center gap-1.5">
+                    <FiCheckCircle /> Verify Offline Payment
                   </button>
                 )}
                 {detail.status === 'refund_requested' && (
+                  <button onClick={() => initiateRefund(detail)} className="btn-primary flex-1 min-w-[140px]">Initiate Refund</button>
+                )}
+                {detail.status === 'refund_initiated' && (
                   <button onClick={() => markRefunded(detail)} className="btn-primary flex-1 min-w-[140px]">Mark Refunded</button>
                 )}
               </div>
+
+              {showVerify && (
+                <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2">
+                  <p className="text-xs font-bold text-emerald-700 flex items-center gap-1.5"><FiSmartphone /> Verify offline collection</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setVerifyMode('cash')}
+                      className={`flex-1 text-xs font-bold rounded-lg py-2 ${verifyMode === 'cash' ? 'bg-emerald-600 text-white' : 'bg-white text-[#33475b]'}`}>Cash</button>
+                    <button onClick={() => setVerifyMode('upi')}
+                      className={`flex-1 text-xs font-bold rounded-lg py-2 ${verifyMode === 'upi' ? 'bg-emerald-600 text-white' : 'bg-white text-[#33475b]'}`}>UPI</button>
+                  </div>
+                  <input value={collectedBy} onChange={(e) => setCollectedBy(e.target.value)} placeholder="Collected by (optional)" className="input-field !py-2 text-sm" />
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowVerify(false)} className="btn-ghost flex-1 !py-1.5 !text-xs">Back</button>
+                    <button onClick={verifyOffline} disabled={verifyBusy} className="btn-primary flex-1 !py-1.5 !text-xs !bg-emerald-600">
+                      {verifyBusy ? 'Verifying…' : 'Confirm Collection'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {showCancel && (
                 <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200">

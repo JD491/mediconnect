@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { FiGrid, FiShoppingBag, FiShoppingCart, FiCalendar, FiActivity, FiPackage, FiPhoneCall, FiHeart, FiFileText } from 'react-icons/fi';
+import { FiGrid, FiShoppingBag, FiShoppingCart, FiCalendar, FiActivity, FiPackage, FiPhoneCall, FiHeart, FiFileText, FiCamera } from 'react-icons/fi';
 import type { IconType } from 'react-icons';
 import DashboardShell, { type DashboardNavItem } from '../../components/DashboardShell';
 import { Stagger, StaggerItem } from '../../components/Reveal';
@@ -17,6 +17,7 @@ import SymptomChecker from './SymptomChecker';
 import MyOrders from './MyOrders';
 import OrderTracking from './OrderTracking';
 import Prescriptions from './Prescriptions';
+import PrescriptionScan from './PrescriptionScan';
 
 const NAV_BASE: DashboardNavItem[] = [
   { to: '/app/store', end: true, icon: <FiGrid />, label: 'Overview' },
@@ -25,6 +26,7 @@ const NAV_BASE: DashboardNavItem[] = [
   { to: '/app/store/cart', icon: <FiShoppingCart />, label: 'Cart' },
   { to: '/app/store/orders', icon: <FiPackage />, label: 'My Orders' },
   { to: '/app/store/prescriptions', icon: <FiFileText />, label: 'Prescriptions' },
+  { to: '/app/store/prescription-scan', icon: <FiCamera />, label: 'Scan Prescription' },
   { to: '/app/store/appointments', icon: <FiCalendar />, label: 'Appointments' },
   { to: '/app/store/symptom-checker', icon: <FiActivity />, label: 'Symptom Checker' },
 ];
@@ -93,6 +95,7 @@ export default function PatientDashboard() {
           <Route path="orders" element={<PageTransition><MyOrders /></PageTransition>} />
           <Route path="orders/:id" element={<PageTransition><OrderTracking /></PageTransition>} />
           <Route path="prescriptions" element={<PageTransition><Prescriptions /></PageTransition>} />
+          <Route path="prescription-scan" element={<PageTransition><PrescriptionScan /></PageTransition>} />
           <Route path="appointments" element={<PageTransition><BookAppointment /></PageTransition>} />
           <Route path="symptom-checker" element={<PageTransition><SymptomChecker /></PageTransition>} />
         </Routes>

@@ -4,8 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FiCheck, FiPrinter, FiRotateCcw, FiPhone, FiMail, FiX, FiRefreshCw, FiFileText } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
+import { useLocation } from '../../lib/LocationContext';
 import { ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUS_TONES } from '../../lib/orderStatus';
+import { printGstInvoice } from '../../lib/payments';
+import { retryOnlinePayment, switchOrderToCod, requestOrderRefund, recordPaymentFailure } from '../../lib/paymentFlows';
+import { isPaymentCancellation } from '../../lib/payments';
 import { PageLoader } from '../../components/UIStates';
+import LiveTrackingMap from '../../components/LiveTrackingMap';
+import MedicineImage from '../../components/MedicineImage';
+import { etaLabel } from '../../lib/geolocation';
 import type { Database, OrderStatus } from '../../types/database.types';
 import type { OrderTrackingOrder, OrderItemWithMedicine } from '../../types/orders';
 
@@ -13,11 +20,12 @@ type PrescriptionRow = Database['public']['Tables']['prescriptions']['Row'];
 
 const STEPS = ORDER_STATUS_FLOW.map((key) => ({ key, label: ORDER_STATUS_LABELS[key] }));
 const CANCELLABLE_STATUSES: OrderStatus[] = ['pending', 'confirmed'];
-const REFUND_STATES: OrderStatus[] = ['refund_requested', 'refunded'];
+const REFUND_STATES: OrderStatus[] = ['refund_requested', 'refund_initiated', 'refunded'];
 
 export default function OrderTracking() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { location } = useLocation();
   const navigate = useNavigate();
   const [order, setOrder] = useState<OrderTrackingOrder | null>(null);
   const [items, setItems] = useState<OrderItemWithMedicine[]>([]);
@@ -26,15 +34,16 @@ export default function OrderTracking() {
   const [cancelReason, setCancelReason] = useState('');
   const [reorderMsg, setReorderMsg] = useState('');
   const [refundMsg, setRefundMsg] = useState('');
+  const [payBusy, setPayBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     const orderId = Number(id);
-    const { data: o } = await supabase.from('orders').select('*, store:stores(store_id, store_name, phone, email, address)').eq('order_id', orderId).single();
+    const { data: o } = await supabase.from('orders').select('*, store:stores(store_id, store_name, phone, email, address, latitude, longitude, city)').eq('order_id', orderId).single();
     setOrder((o as unknown as OrderTrackingOrder) ?? null);
     if (o) {
       const [itemsRes, rxRes] = await Promise.all([
-        supabase.from('order_items').select('*, medicine:medicines(name)').eq('order_id', orderId),
+        supabase.from('order_items').select('*, medicine:medicines(name, image_url, form, gst_rate)').eq('order_id', orderId),
         supabase.from('prescriptions').select('*').eq('order_id', orderId).eq('superseded', false).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
       setItems((itemsRes.data ?? []) as unknown as OrderItemWithMedicine[]);
@@ -52,6 +61,8 @@ export default function OrderTracking() {
   const cancelled = order.status === 'cancelled';
   const isRefundState = REFUND_STATES.includes(order.status);
   const canRequestRefund = order.status === 'delivered' && order.payment_status === 'paid';
+  const canRetryPayment = ['online', 'self_pickup'].includes(order.payment_method)
+    && ['failed', 'pending'].includes(order.payment_status) && order.status !== 'cancelled';
 
   const cancelOrder = async () => {
     if (!cancelReason.trim()) return;
@@ -61,9 +72,62 @@ export default function OrderTracking() {
   };
 
   const requestRefund = async () => {
-    await supabase.from('orders').update({ status: 'refund_requested' }).eq('order_id', order.order_id);
-    setRefundMsg('Refund requested — the store will review and process it.');
+    const { reference } = await requestOrderRefund(order.order_id);
+    setRefundMsg(`Refund requested — the store will review it. Reference ${reference}.`);
     load();
+  };
+
+  const retryPayment = async () => {
+    if (!user) return;
+    setPayBusy(true);
+    setRefundMsg('');
+    try {
+      await retryOnlinePayment({
+        orderId: order.order_id, amount: Number(order.total_amount),
+        name: order.customer_name ?? user.user_metadata?.name ?? undefined,
+        email: user.email, contact: order.customer_phone ?? undefined,
+      });
+      setRefundMsg('Payment successful — thank you!');
+      load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Payment failed.';
+      await recordPaymentFailure(order.order_id, message, isPaymentCancellation(err));
+      setRefundMsg(message);
+      load();
+    } finally {
+      setPayBusy(false);
+    }
+  };
+
+  const payCodInstead = async () => {
+    setPayBusy(true);
+    try {
+      await switchOrderToCod(order.order_id);
+      setRefundMsg('Switched to Cash on Delivery.');
+      load();
+    } catch (err) {
+      setRefundMsg(err instanceof Error ? err.message : 'Could not switch to COD.');
+    } finally {
+      setPayBusy(false);
+    }
+  };
+
+  const printInvoice = () => {
+    printGstInvoice({
+      orderId: order.order_id,
+      storeName: order.store?.store_name ?? 'MediConnect Pharmacy',
+      customerName: order.customer_name ?? 'Customer',
+      address: order.delivery_address,
+      createdAt: order.created_at,
+      items: items.map((i) => ({
+        name: i.medicine?.name ?? 'Medicine', quantity: i.quantity, price: i.price, gstRate: i.medicine?.gst_rate ?? 12,
+      })),
+      deliveryFee: Number(order.delivery_fee),
+      discount: Number(order.discount_amount),
+      total: Number(order.total_amount),
+      paymentMethod: order.payment_method, paymentStatus: order.payment_status,
+      paymentRef: order.payment_ref, pickupToken: order.pickup_token,
+    });
   };
 
   const reorder = async () => {
@@ -94,11 +158,17 @@ export default function OrderTracking() {
       <div className="glass-card">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-extrabold text-[#0f2340]">Order #{order.order_id}</h2>
-          <button onClick={() => window.print()} className="btn-ghost !py-1.5 !text-xs flex items-center gap-1 print:hidden">
-            <FiPrinter /> Invoice
+          <button onClick={printInvoice} className="btn-ghost !py-1.5 !text-xs flex items-center gap-1 print:hidden">
+            <FiPrinter /> GST Invoice
           </button>
         </div>
         <p className="text-xs text-[#5b7088] mb-4">{order.store?.store_name} · {new Date(order.created_at).toLocaleString()}</p>
+        {order.pickup_token && (
+          <div className="mb-3 p-2.5 rounded-xl bg-brand-50 border border-brand-200 flex items-center justify-between">
+            <p className="text-xs font-bold text-brand-700">Self-pickup token</p>
+            <p className="font-mono text-lg font-extrabold text-brand-700 tracking-widest">{order.pickup_token}</p>
+          </div>
+        )}
 
         {cancelled ? (
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
@@ -138,12 +208,47 @@ export default function OrderTracking() {
         </div>
       )}
 
+      {!['cancelled', 'refunded', 'delivered'].includes(order.status) && (
+        <LiveTrackingMap
+          orderId={order.order_id}
+          store={{
+            lat: order.store?.latitude ?? location.lat,
+            lng: order.store?.longitude ?? location.lng,
+          }}
+          customer={{ lat: location.lat, lng: location.lng }}
+          partner={typeof order.delivery_partner_lat === 'number' && typeof order.delivery_partner_lng === 'number'
+            ? { lat: order.delivery_partner_lat, lng: order.delivery_partner_lng }
+            : null}
+          storeName={order.store?.store_name ?? undefined}
+          statusLabel={ORDER_STATUS_LABELS[order.status]}
+          partnerName={order.delivery_partner_name ?? undefined}
+        />
+      )}
+
+      {order.delivery_distance_km != null && (
+        <div className="glass-card !py-2.5 flex items-center gap-3 text-xs font-bold text-[#33475b]">
+          <span>{etaLabel(Number(order.delivery_distance_km))}</span>
+          <span className="text-[#8a9bb0]">·</span>
+          <span>{Number(order.delivery_distance_km).toFixed(1)} km from store</span>
+          {order.delivery_partner_name && (
+            <>
+              <span className="text-[#8a9bb0]">·</span>
+              <span>{order.delivery_partner_name}{order.delivery_partner_phone ? ` · ${order.delivery_partner_phone}` : ''}</span>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="glass-card">
         <h3 className="font-extrabold text-[#0f2340] mb-3">Items</h3>
         <div className="space-y-1.5 mb-3">
           {items.map((it) => (
-            <div key={it.order_item_id} className="flex justify-between text-sm">
-              <span className="text-[#33475b]">{it.medicine?.name} × {it.quantity}</span>
+            <div key={it.order_item_id} className="flex items-center justify-between gap-2 text-sm">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <MedicineImage name={it.medicine?.name ?? 'Medicine'} form={it.medicine?.form} src={it.medicine?.image_url}
+                  className="h-9 w-9 shrink-0 rounded-lg border border-white/60" />
+                <span className="text-[#33475b] truncate">{it.medicine?.name} × {it.quantity}</span>
+              </div>
               <span className="font-bold text-[#0f2340]">₹{(it.price * it.quantity).toFixed(2)}</span>
             </div>
           ))}
@@ -155,11 +260,16 @@ export default function OrderTracking() {
           <div className="flex justify-between text-xs text-[#5b7088]"><span>Delivery fee</span><span>{Number(order.delivery_fee) === 0 ? 'Free' : `₹${order.delivery_fee}`}</span></div>
           <div className="flex justify-between text-sm font-extrabold text-[#0f2340]"><span>Total</span><span>₹{order.total_amount}</span></div>
         </div>
-        <p className="text-xs text-[#5b7088] mt-3">Delivering to: {order.delivery_address}</p>
-        <div className="flex items-center gap-2 mt-1.5">
-          <span className="text-xs text-[#5b7088] uppercase font-bold">{order.payment_method}</span>
+        <p className="text-xs text-[#5b7088] mt-3">{order.self_pickup ? 'Collect from' : 'Delivering to'}: {order.delivery_address}</p>
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          <span className="text-xs text-[#5b7088] uppercase font-bold">{order.payment_method.replaceAll('_', ' ')}</span>
           <span className={`badge ${PAYMENT_STATUS_TONES[order.payment_status]}`}>{PAYMENT_STATUS_LABELS[order.payment_status]}</span>
+          {order.payment_verified && <span className="badge bg-emerald-100 text-emerald-700">Verified</span>}
         </div>
+        {order.payment_ref && <p className="text-[10px] text-[#8a9bb0] mt-1 break-all">Transaction ref: {order.payment_ref}</p>}
+        {order.payment_failure_reason && (
+          <p className="text-[11px] text-rose-500 font-semibold mt-1">Payment issue: {order.payment_failure_reason}</p>
+        )}
       </div>
 
       <div className="glass-card flex flex-wrap gap-2 print:hidden">
@@ -168,6 +278,14 @@ export default function OrderTracking() {
         )}
         {order.status === 'delivered' && (
           <button onClick={reorder} className="btn-primary flex items-center gap-2"><FiRotateCcw /> Buy Again</button>
+        )}
+        {canRetryPayment && (
+          <>
+            <button disabled={payBusy} onClick={retryPayment} className="btn-primary flex items-center gap-2 disabled:opacity-50">
+              <FiRefreshCw /> {payBusy ? 'Opening gateway...' : 'Retry Payment'}
+            </button>
+            <button disabled={payBusy} onClick={payCodInstead} className="btn-ghost disabled:opacity-50">Switch to COD</button>
+          </>
         )}
         {canRequestRefund && (
           <button onClick={requestRefund} className="btn-ghost flex items-center gap-2 !text-orange-600"><FiRefreshCw /> Request Refund</button>

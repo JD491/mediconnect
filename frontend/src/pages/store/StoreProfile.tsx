@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
-import { FiSave, FiCheckCircle } from 'react-icons/fi';
+import { FiSave, FiCheckCircle, FiCrosshair, FiMapPin } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
+import { getCurrentPosition, reverseGeocode } from '../../lib/geolocation';
 import type { StorePageProps } from '../../types/store';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -22,6 +23,8 @@ interface StoreProfileForm {
   delivery_radius_km: string;
   min_order_amount: number;
   is_open: boolean;
+  latitude: string;
+  longitude: string;
 }
 
 interface StoreProfileProps extends StorePageProps {
@@ -37,8 +40,11 @@ export default function StoreProfile({ store, onSaved }: StoreProfileProps) {
     weekly_holidays: store.weekly_holidays || [], license_number: store.license_number || '',
     delivery_radius_km: store.delivery_radius_km != null ? String(store.delivery_radius_km) : '', min_order_amount: store.min_order_amount ?? 0,
     is_open: store.is_open ?? true,
+    latitude: store.latitude != null ? String(store.latitude) : '',
+    longitude: store.longitude != null ? String(store.longitude) : '',
   });
   const [busy, setBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -49,6 +55,29 @@ export default function StoreProfile({ store, onSaved }: StoreProfileProps) {
     weekly_holidays: f.weekly_holidays.includes(d) ? f.weekly_holidays.filter((x) => x !== d) : [...f.weekly_holidays, d],
   }));
 
+  const captureStoreGps = async () => {
+    setError('');
+    setLocating(true);
+    try {
+      const point = await getCurrentPosition();
+      const resolved = await reverseGeocode(point);
+      setForm((f) => ({
+        ...f,
+        latitude: point.lat.toFixed(6),
+        longitude: point.lng.toFixed(6),
+        city: resolved?.city || f.city,
+        pincode: resolved?.pincode || f.pincode,
+        address: f.address || resolved?.label || f.address,
+      }));
+      setSuccess('Store GPS captured. Adjust the delivery radius below.');
+      setTimeout(() => setSuccess(''), 2500);
+    } catch {
+      setError('Could not read GPS. Enter the store latitude/longitude manually below.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
@@ -58,6 +87,9 @@ export default function StoreProfile({ store, onSaved }: StoreProfileProps) {
     if (form.pincode && !/^\d{4,10}$/.test(form.pincode)) return setError('Enter a valid PIN code.');
     if (form.phone && !/^\+?\d{7,15}$/.test(form.phone.replace(/\s/g, ''))) return setError('Enter a valid phone number.');
     if (Number(form.min_order_amount) < 0) return setError('Minimum order amount cannot be negative.');
+    if (form.latitude && (Number.isNaN(Number(form.latitude)) || Math.abs(Number(form.latitude)) > 90)) return setError('Latitude must be between -90 and 90.');
+    if (form.longitude && (Number.isNaN(Number(form.longitude)) || Math.abs(Number(form.longitude)) > 180)) return setError('Longitude must be between -180 and 180.');
+    if (form.delivery_radius_km && Number(form.delivery_radius_km) < 0) return setError('Delivery radius cannot be negative.');
     if (form.opening_time && form.closing_time && form.closing_time <= form.opening_time) {
       return setError('Closing time must be after opening time.');
     }
@@ -80,6 +112,8 @@ export default function StoreProfile({ store, onSaved }: StoreProfileProps) {
       delivery_radius_km: form.delivery_radius_km === '' ? null : Number(form.delivery_radius_km),
       min_order_amount: Number(form.min_order_amount),
       is_open: form.is_open,
+      latitude: form.latitude === '' ? null : Number(form.latitude),
+      longitude: form.longitude === '' ? null : Number(form.longitude),
     }).eq('store_id', store.store_id);
     setBusy(false);
     if (updErr) return setError(updErr.message);
@@ -111,6 +145,22 @@ export default function StoreProfile({ store, onSaved }: StoreProfileProps) {
           <input type="number" step="0.1" min="0" placeholder="Delivery radius (km)" value={form.delivery_radius_km} onChange={set('delivery_radius_km')} className="input-field" />
           <input type="number" step="1" min="0" placeholder="Minimum order amount (₹)" value={form.min_order_amount}
             onChange={(e) => setForm((f) => ({ ...f, min_order_amount: Number(e.target.value) }))} className="input-field" />
+          <div className="col-span-2 rounded-xl border border-brand-100 bg-brand-50/60 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-extrabold text-brand-700 flex items-center gap-1"><FiMapPin /> Store GPS coordinates</p>
+              <button type="button" onClick={captureStoreGps} disabled={locating}
+                className="btn-ghost !py-1.5 !text-xs flex items-center gap-1.5">
+                <FiCrosshair className={locating ? 'animate-spin' : ''} /> {locating ? 'Locating…' : 'Capture GPS'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input placeholder="Latitude (e.g. 19.243700)" value={form.latitude} onChange={set('latitude')} className="input-field" />
+              <input placeholder="Longitude (e.g. 73.135500)" value={form.longitude} onChange={set('longitude')} className="input-field" />
+            </div>
+            <p className="text-[10px] text-brand-700/80 mt-1.5">
+              Used to sort your store by distance and enforce the delivery radius. Customers beyond {form.delivery_radius_km || '—'} km see pickup-only.
+            </p>
+          </div>
         </div>
       </div>
 

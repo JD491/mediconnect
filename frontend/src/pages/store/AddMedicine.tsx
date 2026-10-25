@@ -2,17 +2,19 @@ import { useState, useEffect, useCallback, type ChangeEvent, type FormEvent } fr
 import { FiSearch, FiPlusCircle, FiCheckCircle } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { useAuth } from '../../lib/AuthContext';
+import MedicineImage, { medicineFallbackSrc } from '../../components/MedicineImage';
 import type { StorePageProps } from '../../types/store';
 import type { Database, MedicineForm } from '../../types/database.types';
 
 type MedicineRow = Database['public']['Tables']['medicines']['Row'];
 type Mode = 'search' | 'create';
 
-const FORMS: MedicineForm[] = ['tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'other'];
+const FORMS: MedicineForm[] = ['tablet', 'capsule', 'syrup', 'injection', 'cream', 'drops', 'other', 'inhaler', 'gel', 'device', 'strips', 'powder'];
 
 interface NewMedicineForm {
   name: string; generic_name: string; brand: string; category: string; manufacturer: string; description: string;
   dosage: string; form: MedicineForm; pack_size: string; image_url: string; prescription_required: boolean;
+  gst_rate: string; salt_composition: string;
 }
 
 interface StockForm {
@@ -23,6 +25,7 @@ interface StockForm {
 const EMPTY_NEW_MEDICINE: NewMedicineForm = {
   name: '', generic_name: '', brand: '', category: '', manufacturer: '', description: '',
   dosage: '', form: 'tablet', pack_size: '', image_url: '', prescription_required: false,
+  gst_rate: '5', salt_composition: '',
 };
 const EMPTY_STOCK: StockForm = {
   price: '', mrp: '', quantity: '', discount_percent: '0', min_stock_level: '10',
@@ -61,6 +64,23 @@ export default function AddMedicine({ store }: StorePageProps) {
     setNewMed((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? (e.target as HTMLInputElement).checked : e.target.value }));
   const setS = (k: keyof StockForm) => (e: ChangeEvent<HTMLInputElement>) => setStockForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Keep the promo percentage honest: it always reflects MRP vs. selling price.
+  const setStockPricing = (k: 'mrp' | 'price') => (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setStockForm((f) => {
+      const next = { ...f, [k]: value };
+      const mrp = Number(k === 'mrp' ? value : next.mrp);
+      const price = Number(k === 'price' ? value : next.price);
+      if (Number.isFinite(mrp) && mrp > 0 && Number.isFinite(price) && price >= 0 && price <= mrp) {
+        next.discount_percent = String(Math.round(((mrp - price) / mrp) * 100));
+      }
+      return next;
+    });
+  };
+  const livePct = Number(stockForm.mrp) > 0 && Number(stockForm.price) >= 0 && Number(stockForm.price) <= Number(stockForm.mrp)
+    ? Math.round(((Number(stockForm.mrp) - Number(stockForm.price)) / Number(stockForm.mrp)) * 100)
+    : 0;
+
   const validateStock = (): string => {
     if (stockForm.price === '' || stockForm.mrp === '' || stockForm.quantity === '') {
       return 'MRP, selling price and quantity are required.';
@@ -98,7 +118,14 @@ export default function AddMedicine({ store }: StorePageProps) {
       if (mode === 'create') {
         const { data, error: medErr } = await supabase
           .from('medicines')
-          .insert({ ...newMed, created_by: user.id })
+          .insert({
+            name: newMed.name.trim(), generic_name: newMed.generic_name || null, brand: newMed.brand || null,
+            category: newMed.category || null, manufacturer: newMed.manufacturer || null,
+            description: newMed.description || null, dosage: newMed.dosage || null, form: newMed.form,
+            pack_size: newMed.pack_size || null, image_url: newMed.image_url || null,
+            prescription_required: newMed.prescription_required, gst_rate: Number(newMed.gst_rate) || 0,
+            salt_composition: newMed.salt_composition || null, created_by: user.id,
+          })
           .select()
           .single();
         if (medErr) throw medErr;
@@ -194,7 +221,37 @@ export default function AddMedicine({ store }: StorePageProps) {
               {FORMS.map((f) => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
             </select>
             <input placeholder="Pack size (e.g. 10 tablets)" value={newMed.pack_size} onChange={setN('pack_size')} className="input-field" />
-            <input placeholder="Image URL" value={newMed.image_url} onChange={setN('image_url')} className="input-field col-span-2" />
+            <select value={newMed.gst_rate} onChange={setN('gst_rate')} className="input-field">
+              <option value="5">GST 5%</option>
+              <option value="12">GST 12%</option>
+              <option value="18">GST 18%</option>
+            </select>
+            <input placeholder="Salt composition (e.g. Paracetamol 500mg)" value={newMed.salt_composition} onChange={setN('salt_composition')} className="input-field col-span-2" />
+
+            <div className="col-span-2 rounded-xl border border-white/50 bg-white/40 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-[#5b7088] mb-2">Pack image</p>
+              <div className="flex gap-3">
+                <MedicineImage name={newMed.name || 'New medicine'} form={newMed.form} src={newMed.image_url}
+                  className="h-20 w-20 shrink-0 rounded-xl border border-white/60" />
+                <div className="flex-1 min-w-0">
+                  <input placeholder="Image URL (optional)" value={newMed.image_url} onChange={setN('image_url')} className="input-field mb-2" />
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => setNewMed((f) => ({ ...f, image_url: '' }))}
+                      className={`rounded-lg px-2 py-1 text-[10px] font-bold border ${newMed.image_url === '' ? 'bg-brand-600 text-white border-brand-600' : 'bg-white/70 text-[#33475b] border-white/60'}`}>
+                      Auto
+                    </button>
+                    {FORMS.map((f) => (
+                      <button type="button" key={f} onClick={() => setNewMed((prev) => ({ ...prev, form: f, image_url: medicineFallbackSrc(f) }))}
+                        className={`rounded-lg px-2 py-1 text-[10px] font-bold capitalize border ${newMed.image_url === medicineFallbackSrc(f) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white/70 text-[#33475b] border-white/60'}`}>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-[#8a9bb0] mt-1.5">Presets are bundled illustrations — they always load, even offline.</p>
+                </div>
+              </div>
+            </div>
+
             <textarea placeholder="Description" value={newMed.description} onChange={setN('description')} className="input-field col-span-2" rows={2} />
             <label className="col-span-2 flex items-center gap-2 text-xs font-bold text-[#33475b]">
               <input type="checkbox" checked={newMed.prescription_required} onChange={setN('prescription_required')} /> Prescription required
@@ -206,8 +263,14 @@ export default function AddMedicine({ store }: StorePageProps) {
       <div className="glass-card">
         <h3 className="font-extrabold text-[#0f2340] mb-3">Store Price, Stock & Batch</h3>
         <div className="grid grid-cols-2 gap-3">
-          <input required type="number" step="0.01" placeholder="MRP *" value={stockForm.mrp} onChange={setS('mrp')} className="input-field" />
-          <input required type="number" step="0.01" placeholder="Selling price *" value={stockForm.price} onChange={setS('price')} className="input-field" />
+          <input required type="number" step="0.01" placeholder="MRP *" value={stockForm.mrp} onChange={setStockPricing('mrp')} className="input-field" />
+          <input required type="number" step="0.01" placeholder="Selling price *" value={stockForm.price} onChange={setStockPricing('price')} className="input-field" />
+          <div className="col-span-2 flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2">
+            <span className="text-[11px] font-bold text-emerald-700">Customer sees</span>
+            <span className="text-sm font-extrabold text-emerald-700">
+              {livePct}% OFF{Number(stockForm.mrp) > Number(stockForm.price) ? ` · save ₹${(Number(stockForm.mrp) - Number(stockForm.price)).toFixed(2)}` : ''}
+            </span>
+          </div>
           <input type="number" step="0.01" placeholder="Discount %" value={stockForm.discount_percent} onChange={setS('discount_percent')} className="input-field" />
           <input required type="number" placeholder="Quantity *" value={stockForm.quantity} onChange={setS('quantity')} className="input-field" />
           <input type="number" placeholder="Minimum stock level" value={stockForm.min_stock_level} onChange={setS('min_stock_level')} className="input-field" />

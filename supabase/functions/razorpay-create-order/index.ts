@@ -1,9 +1,12 @@
 // Supabase Edge Function: razorpay-create-order
 //
-// Creates a Razorpay order server-side. The client NEVER sees
-// RAZORPAY_KEY_SECRET and NEVER decides the amount — the amount is read
-// straight from the `orders` row in the database, so a tampered client
-// request can't pay less than the real total.
+// Creates a Razorpay order server-side for either a pharmacy order or a
+// doctor appointment. The client NEVER sees RAZORPAY_KEY_SECRET and NEVER
+// decides the amount — the amount is read straight from the database row
+// (orders.total_amount / doctors.consultation_fee), so a tampered client
+// request can't pay less than the real price.
+//
+// Request body: { order_id: number, kind?: 'order' | 'appointment' }
 //
 // Required secrets (set via `supabase secrets set`):
 //   RAZORPAY_KEY_ID
@@ -44,18 +47,48 @@ serve(async (req) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
     if (userErr || !userData?.user) return json({ error: 'Unauthorized' }, 401);
 
-    const { order_id } = await req.json();
+    const { order_id, kind = 'order' } = await req.json();
     if (!order_id) return json({ error: 'order_id is required' }, 400);
+    if (kind !== 'order' && kind !== 'appointment') return json({ error: 'Unknown payment target' }, 400);
 
-    const { data: order, error: orderErr } = await supabase
-      .from('orders').select('order_id, user_id, total_amount, payment_status, status').eq('order_id', order_id).single();
+    let amount: number;
+    let receipt: string;
+    let notes: Record<string, string>;
 
-    if (orderErr || !order) return json({ error: 'Order not found' }, 404);
-    if (order.user_id !== userData.user.id) return json({ error: 'Forbidden' }, 403);
-    if (order.payment_status === 'paid') return json({ error: 'Order is already paid' }, 409);
-    if (order.status === 'cancelled') return json({ error: 'This order was cancelled and cannot be paid for' }, 409);
+    if (kind === 'appointment') {
+      const { data: appointment, error: appointmentErr } = await supabase
+        .from('appointments')
+        .select('appointment_id, patient_id, payment_status, status, doctor:doctors(consultation_fee)')
+        .eq('appointment_id', order_id)
+        .single();
 
-    const amountPaise = Math.round(Number(order.total_amount) * 100);
+      if (appointmentErr || !appointment) return json({ error: 'Appointment not found' }, 404);
+      if (appointment.patient_id !== userData.user.id) return json({ error: 'Forbidden' }, 403);
+      if (appointment.payment_status === 'paid') return json({ error: 'Appointment is already paid' }, 409);
+      if (appointment.status === 'cancelled') return json({ error: 'This appointment was cancelled and cannot be paid for' }, 409);
+
+      // The doctor's fee is authoritative — never trust the amount sent by the browser.
+      amount = Number(appointment.doctor?.consultation_fee ?? 0);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return json({ error: 'This consultation does not require an online payment' }, 400);
+      }
+      receipt = `appt_${appointment.appointment_id}`;
+      notes = { mediconnect_appointment_id: String(appointment.appointment_id) };
+    } else {
+      const { data: order, error: orderErr } = await supabase
+        .from('orders').select('order_id, user_id, total_amount, payment_status, status').eq('order_id', order_id).single();
+
+      if (orderErr || !order) return json({ error: 'Order not found' }, 404);
+      if (order.user_id !== userData.user.id) return json({ error: 'Forbidden' }, 403);
+      if (order.payment_status === 'paid') return json({ error: 'Order is already paid' }, 409);
+      if (order.status === 'cancelled') return json({ error: 'This order was cancelled and cannot be paid for' }, 409);
+
+      amount = Number(order.total_amount);
+      receipt = `order_${order.order_id}`;
+      notes = { mediconnect_order_id: String(order.order_id) };
+    }
+
+    const amountPaise = Math.round(amount * 100);
 
     const rpRes = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',
@@ -64,9 +97,9 @@ serve(async (req) => {
         Authorization: 'Basic ' + btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`),
       },
       body: JSON.stringify({
-        amount: amountPaise, currency: 'INR', receipt: `order_${order.order_id}`,
+        amount: amountPaise, currency: 'INR', receipt,
         payment_capture: 1, // auto-capture so a successful checkout is immediately "captured", never left "authorized"
-        notes: { mediconnect_order_id: String(order.order_id) },
+        notes,
       }),
     });
 
@@ -76,7 +109,16 @@ serve(async (req) => {
     }
 
     const rpOrder = await rpRes.json();
-    await supabase.from('orders').update({ razorpay_order_id: rpOrder.id, payment_status: 'processing' }).eq('order_id', order.order_id);
+
+    if (kind === 'appointment') {
+      await supabase.from('appointments')
+        .update({ razorpay_order_id: rpOrder.id, payment_status: 'processing' })
+        .eq('appointment_id', order_id);
+    } else {
+      await supabase.from('orders')
+        .update({ razorpay_order_id: rpOrder.id, payment_status: 'processing' })
+        .eq('order_id', order_id);
+    }
 
     return json({ razorpay_order_id: rpOrder.id, amount: rpOrder.amount, currency: rpOrder.currency, key_id: RAZORPAY_KEY_ID });
   } catch (e) {

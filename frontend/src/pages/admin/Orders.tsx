@@ -4,6 +4,7 @@ import { FiClipboard } from 'react-icons/fi';
 import { supabase } from '../../lib/supabaseClient';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_TONES, PAYMENT_STATUS_LABELS, PAYMENT_STATUS_TONES, ALL_ORDER_STATUSES } from '../../lib/orderStatus';
 import { SkeletonTable, EmptyState } from '../../components/UIStates';
+import RevenueReconciliation from '../../components/RevenueReconciliation';
 import type { Database, OrderStatus } from '../../types/database.types';
 
 type OrderRow = Database['public']['Tables']['orders']['Row'];
@@ -41,6 +42,8 @@ export default function Orders() {
           </button>
         ))}
       </div>
+
+      {orders !== null && <RevenueReconciliation orders={orders} title="Platform settlement" />}
 
       {orders === null ? (
         <SkeletonTable rows={6} cols={5} />

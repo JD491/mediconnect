@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="Medicated gel tube illustration">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef9ff"/><stop offset="1" stop-color="#d9ecfa"/>
+    </linearGradient>
+    <linearGradient id="tube" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cbdff2"/>
+    </linearGradient>
+    <linearGradient id="label" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#0284c7"/>
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-30%" width="200%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0f2340" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg)"/>
+  <circle cx="200" cy="150" r="114" fill="#ffffff" opacity="0.4"/>
+  <g filter="url(#shadow)">
+    <path d="M168 62h64l10 24H158z" fill="#94a3b8"/>
+    <path d="M158 86h84l-8 138a16 16 0 0 1-16 15h-36a16 16 0 0 1-16-15z" fill="url(#tube)" stroke="#b9d3ea" stroke-width="2"/>
+    <rect x="166" y="112" width="68" height="82" rx="10" fill="url(#label)"/>
+    <rect x="176" y="126" width="48" height="8" rx="4" fill="#ffffff" opacity="0.9"/>
+    <rect x="176" y="142" width="36" height="6" rx="3" fill="#ffffff" opacity="0.6"/>
+    <rect x="176" y="154" width="42" height="6" rx="3" fill="#ffffff" opacity="0.6"/>
+    <circle cx="200" cy="178" r="10" fill="#ffffff" opacity="0.8"/>
+    <path d="M196 178h8M200 174v8" stroke="#0284c7" stroke-width="3" stroke-linecap="round"/>
+    <rect x="180" y="232" width="40" height="22" rx="6" fill="#0f2340"/>
+    <rect x="187" y="238" width="26" height="10" rx="3" fill="#33475b"/>
+  </g>
+  <g fill="#8ab4d8" opacity="0.55">
+    <circle cx="86" cy="90" r="5"/><circle cx="318" cy="86" r="7"/><circle cx="314" cy="226" r="4"/><circle cx="80" cy="218" r="6"/>
+  </g>
+</svg>

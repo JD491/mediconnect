@@ -19,18 +19,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-
-    /* Incremental migration: the ~40 existing page components remain valid
-       JavaScript (.jsx) and are allowed to coexist with strictly-typed .ts/
-       .tsx modules (lib/, components/, types/, hooks/). This is a
-       deliberate "strangler fig" strategy, not a shortcut — converting every
-       page in one unverifiable pass would trade a working app for an
-       unverified 7,000-line diff. New/refactored code goes in as .tsx;
-       existing .jsx pages import typed modules (getting real type-checking
-       on their Supabase calls) and migrate to .tsx incrementally over time. */
-    "allowJs": true,
-    "checkJs": false
+    "noUncheckedIndexedAccess": true
   },
   "include": ["src"]
 }

@@ -1,5 +1,6 @@
 import type { Database } from './database.types';
 import type { CartMathTotals } from '../lib/cartMath';
+import type { PaymentMethod } from '../lib/payments';
 
 type StockRow = Database['public']['Tables']['stock']['Row'];
 type MedicineRow = Database['public']['Tables']['medicines']['Row'];
@@ -8,8 +9,8 @@ type CartItemRow = Database['public']['Tables']['cart_items']['Row'];
 
 /** The nested shape returned by the cart_items select in useCart's load(). */
 export interface CartStock extends Pick<StockRow, 'stock_id' | 'price' | 'mrp' | 'quantity' | 'store_id' | 'medicine_id'> {
-  medicine: Pick<MedicineRow, 'name' | 'prescription_required'> | null;
-  store: Pick<StoreRow, 'store_id' | 'store_name' | 'min_order_amount'> | null;
+  medicine: Pick<MedicineRow, 'name' | 'prescription_required' | 'form' | 'image_url'> | null;
+  store: (Pick<StoreRow, 'store_id' | 'store_name' | 'min_order_amount'> & Partial<Pick<StoreRow, 'latitude' | 'longitude' | 'delivery_radius_km'>>) | null;
 }
 
 export interface CartItem extends Pick<CartItemRow, 'cart_item_id' | 'quantity' | 'saved_for_later'> {
@@ -41,7 +42,13 @@ export interface CheckoutAddressForm {
   address: string;
   city: string;
   pincode: string;
-  payment_method: 'cod' | 'online';
+  payment_method: PaymentMethod;
+  /** Optional hyperlocal/pickup metadata. */
+  delivery_notes?: string;
+  tag?: 'Home' | 'Work' | 'Other';
+  lat?: number;
+  lng?: number;
+  self_pickup?: boolean;
 }
 
 export type CheckoutStep = 1 | 2 | 3 | 4 | 5;

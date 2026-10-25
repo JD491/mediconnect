@@ -6,17 +6,17 @@ Practical "how do I add X" recipes for this codebase.
 
 Example: adding a "Delivery Zones" page to the Store Owner dashboard.
 
-1. Create `frontend/src/pages/store/DeliveryZones.jsx` (or `.tsx` — new
-   files should be TS; see `docs/ARCHITECTURE.md`'s note on the JS/TS split).
-   Follow the shape every other store page uses:
+1. Create `frontend/src/pages/store/DeliveryZones.tsx` (the whole frontend is
+   TS now — see `docs/ARCHITECTURE.md`). Follow the shape every other store
+   page uses:
    ```tsx
    export default function DeliveryZones({ store }) {
      // store.store_id is already scoped to this owner — every query should filter by it
    }
    ```
-2. Register the route + nav entry in `StoreOwnerDashboard.jsx`:
-   ```jsx
-   import DeliveryZones from './DeliveryZones.jsx';
+2. Register the route + nav entry in `StoreOwnerDashboard.tsx`:
+   ```tsx
+   import DeliveryZones from './DeliveryZones';
    // in NAV array:
    { to: '/app/store-owner/delivery-zones', icon: <FiMap />, label: 'Delivery Zones' },
    // in <Routes>:
@@ -103,7 +103,7 @@ If you need a new order status:
    - `enforce_order_status_transitions()` in SQL (the actual enforcement).
    - `isValidOrderTransition()` in `lib/orderStatus.ts` (client-side
      preview/UI-disabling — not enforcement, just UX).
-   `lib/orderStatus.test.ts` exists specifically to catch these two
+   `lib/__tests__/orderStatus.test.ts` exists specifically to catch these two
    drifting apart — run it after any change here.
 3. Add the label/color to `ORDER_STATUS_LABELS`/`ORDER_STATUS_TONES` in the
    same file so every dashboard picks it up automatically (they all import
@@ -116,7 +116,7 @@ cd frontend
 npm install
 npm run dev         # start the app
 npm run typecheck   # tsc -b, strict mode, .ts/.tsx only
-npm run lint        # eslint, now correctly covers .js/.jsx/.ts/.tsx
+npm run lint        # eslint over every .ts/.tsx file
 npm run test         # vitest run — unit tests for business logic
 npm run test:watch  # vitest, watch mode
 npm run build        # production build

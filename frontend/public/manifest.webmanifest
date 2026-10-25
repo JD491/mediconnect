@@ -1,0 +1,65 @@
+{
+  "name": "MediConnect — Medicines, Doctors & Emergency Care",
+  "short_name": "MediConnect",
+  "description": "Order medicines from verified pharmacies near you, consult doctors online or in person, scan prescriptions and reach emergency care in one tap.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f0f7ff",
+  "theme_color": "#173e93",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": ["health", "medical", "shopping", "lifestyle"],
+  "icons": [
+    {
+      "src": "/brand/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Medicine Store",
+      "short_name": "Medicines",
+      "description": "Browse verified pharmacy stock near you",
+      "url": "/app/store/medicines",
+      "icons": [{ "src": "/brand/favicon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Book a Doctor",
+      "short_name": "Doctors",
+      "description": "Video or in-person consultation",
+      "url": "/app/store/appointments",
+      "icons": [{ "src": "/brand/favicon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Emergency",
+      "short_name": "Emergency",
+      "description": "Nearest ambulance, hospital and blood bank",
+      "url": "/emergency",
+      "icons": [{ "src": "/brand/favicon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

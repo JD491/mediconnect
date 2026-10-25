@@ -1,4 +1,5 @@
 import { FiShoppingBag, FiClock, FiTrash2, FiAlertTriangle } from 'react-icons/fi';
+import MedicineImage from '../../../components/MedicineImage';
 import type { CartGroup, CartItem, CouponResult } from '../../../types/cart';
 
 interface CartGroupCardProps {
@@ -24,10 +25,14 @@ export default function CartGroupCard({
       </div>
       <div className="space-y-2 mb-3">
         {g.items.map((i) => (
-          <div key={i.cart_item_id} className="flex items-center justify-between">
-            <div>
-              <p className="font-bold text-[#0f2340] text-sm">{i.stock?.medicine?.name}</p>
-              <p className="text-xs text-[#5b7088]">₹{i.stock?.price} each{i.quantity > i.stock.quantity ? ` · only ${i.stock.quantity} left` : ''}</p>
+          <div key={i.cart_item_id} className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <MedicineImage name={i.stock?.medicine?.name ?? 'Medicine'} form={i.stock?.medicine?.form} src={i.stock?.medicine?.image_url}
+                className="h-11 w-11 shrink-0 rounded-xl border border-white/60" />
+              <div className="min-w-0">
+                <p className="font-bold text-[#0f2340] text-sm truncate">{i.stock?.medicine?.name}</p>
+                <p className="text-xs text-[#5b7088]">₹{i.stock?.price} each{i.quantity > i.stock.quantity ? ` · only ${i.stock.quantity} left` : ''}</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
