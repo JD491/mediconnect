@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Environment variables (contains Supabase keys, Razorpay secrets, etc.)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Supabase local dev
+supabase/.branches
+supabase/.temp
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Coverage
+coverage/

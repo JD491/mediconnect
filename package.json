@@ -1,0 +1,16 @@
+{
+  "name": "mediconnect",
+  "private": true,
+  "version": "1.0.0",
+  "description": "MediConnect — run everything from here. See README.md 'Quick Start'.",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "install:all": "npm install --prefix frontend && npm install --prefix scripts",
+    "seed": "npm run seed --prefix scripts",
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "setup": "npm run seed && npm run dev"
+  }
+}
