@@ -3,7 +3,7 @@ import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../lib/AuthContext';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, getDataMode } from '../../lib/supabaseClient';
 import AmbientBackground from '../../components/AmbientBackground';
 
 // Roles a person can self-register as. Doctors/store owners additionally get an
@@ -43,15 +43,18 @@ export default function Signup() {
     if (error) { setBusy(false); return setError(error.message); }
 
     // Doctors/store owners need a role-specific row (pending admin approval).
+    // Local fallback signups already get their role row seeded by AuthContext,
+    // so only touch Supabase when the live database is authoritative.
     const userId = data.user?.id;
+    const mode = await getDataMode();
     let roleRowError: { message: string } | null = null;
-    if (userId && form.role === 'doctor') {
+    if (mode === 'live' && userId && form.role === 'doctor') {
       const { error: docErr } = await supabase.from('doctors').insert({
         user_id: userId, specialization: 'General Physician', approval_status: 'pending',
       });
       roleRowError = docErr;
     }
-    if (userId && form.role === 'store_owner') {
+    if (mode === 'live' && userId && form.role === 'store_owner') {
       const { error: storeErr } = await supabase.from('stores').insert({
         owner_id: userId, store_name: `${form.name}'s Store`, license_number: 'PENDING',
         address: form.address, approval_status: 'pending',
@@ -66,7 +69,7 @@ export default function Signup() {
     }
 
     setBusy(false);
-    navigate('/login');
+    navigate(data.session ? '/app' : '/login');
   };
 
   return (

@@ -24,22 +24,68 @@ import { createClient, type Session, type SupabaseClient } from '@supabase/supab
 import type { Database } from '../types/database.types';
 import { DemoChannel, DemoQuery, demoFunctions, demoRpc, demoStorage, type DemoResponse } from './demoDb';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const env = (import.meta.env ?? {}) as Record<string, string | undefined>;
+const supabaseUrlRaw = typeof env.VITE_SUPABASE_URL === 'string' ? env.VITE_SUPABASE_URL.trim() : '';
+const supabaseAnonKeyRaw = typeof env.VITE_SUPABASE_ANON_KEY === 'string' ? env.VITE_SUPABASE_ANON_KEY.trim() : '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
+/**
+ * True when the build was given a real project URL + API key. Placeholder
+ * values from `.env.example` (or an env var that Vite left undefined) are
+ * treated as "not configured" so the app falls back gracefully instead of
+ * pointing supabase-js at a URL that cannot exist.
+ */
+function isPlaceholder(value: string): boolean {
+  if (!value) return true;
+  const v = value.toLowerCase();
+  return (
+    v === 'undefined' ||
+    v === 'null' ||
+    v === 'false' ||
+    v.includes('your-supabase-url') ||
+    v.includes('your_supabase_url') ||
+    v.includes('your-anon-key') ||
+    v.includes('your_anon_key') ||
+    v.includes('<your') ||
+    v.includes('changeme') ||
+    v.includes('demo.invalid') ||
+    v.includes('example.supabase.co') ||
+    v.includes('test.supabase.co')
+  );
+}
+
+const hasLiveConfig = !isPlaceholder(supabaseUrlRaw) && !isPlaceholder(supabaseAnonKeyRaw);
+const supabaseUrl = hasLiveConfig ? supabaseUrlRaw.replace(/\/+$/, '') : 'https://demo.invalid';
+const supabaseAnonKey = hasLiveConfig ? supabaseAnonKeyRaw : 'demo-anon-key';
+
+/** Exported so the auth layer can decide whether to try the network at all. */
+export const isLiveConfigured = hasLiveConfig;
+
+if (!hasLiveConfig && env.MODE !== 'test') {
+  // Deliberately quiet: this is an expected, fully supported mode. It must
+  // never surface as a warning banner in the UI.
   // eslint-disable-next-line no-console
-  console.warn('Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — MediConnect will run in local demo mode.');
+  console.debug('[MediConnect] Live Supabase is not configured — using the built-in local fallback engine.');
+}
+
+function createRawClient(): SupabaseClient<Database> {
+  const options = {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  } as const;
+  try {
+    return createClient<Database>(supabaseUrl, supabaseAnonKey, options);
+  } catch {
+    // A malformed key/URL must not stop the app from booting; the auth layer
+    // will transparently use the local fallback engine.
+    return createClient<Database>('https://demo.invalid', 'demo-anon-key', options);
+  }
 }
 
 /** The real client. Auth lives here; every data module imports `supabase` below. */
-export const rawSupabase = createClient<Database>(supabaseUrl || 'https://demo.invalid', supabaseAnonKey || 'demo-anon-key', {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+export const rawSupabase = createRawClient();
 
 /* ------------------------------------------------------------------ */
 /* Data-mode detection                                                 */
@@ -47,7 +93,8 @@ export const rawSupabase = createClient<Database>(supabaseUrl || 'https://demo.i
 
 export type DataMode = 'live' | 'demo';
 
-const MODE_KEY = 'mediconnect_data_mode_v1';
+const MODE_KEY = 'mediconnect_data_mode_v2';
+const LEGACY_MODE_KEY = 'mediconnect_data_mode_v1';
 export const DEMO_SESSION_KEY = 'mediconnect_demo_session_v1';
 
 let cachedMode: DataMode | null = null;
@@ -84,6 +131,8 @@ export interface DemoSessionRecord {
   session: Session;
   role: string;
   email: string;
+  /** `local` = an account registered in the local fallback engine. */
+  source?: 'demo' | 'local';
 }
 
 export function loadDemoSession(): DemoSessionRecord | null {
@@ -109,12 +158,19 @@ export function clearDemoSession(): void {
 /** Persist the selected mode so a refresh doesn't re-probe a known demo app. */
 export function setDemoMode(demo: boolean): void {
   cachedMode = demo ? 'demo' : 'live';
-  if (hasStorage()) {
-    try {
-      window.localStorage.setItem(MODE_KEY, cachedMode);
-    } catch {
-      // ignore
+  if (!hasStorage()) return;
+  try {
+    if (demo) {
+      // Only pin demo mode when there is no live project to connect to.
+      // Otherwise a stale probe (e.g. a transient network blip) would keep
+      // live users locked out of their real database forever.
+      if (isLiveConfigured) window.localStorage.removeItem(MODE_KEY);
+      else window.localStorage.setItem(MODE_KEY, 'demo');
+    } else {
+      window.localStorage.setItem(MODE_KEY, 'live');
     }
+  } catch {
+    // ignore
   }
 }
 
@@ -134,7 +190,7 @@ export function isDemoModeSync(): boolean {
 
 function canProbeLive(): boolean {
   if (typeof fetch !== 'function') return false;
-  if (!supabaseUrl || !supabaseAnonKey) return false;
+  if (!isLiveConfigured) return false;
   // The unit-test setup injects fake credentials; never hit the network there.
   if (import.meta.env.MODE === 'test') return false;
   if (/test\.supabase\.co|demo\.invalid/i.test(supabaseUrl)) return false;
@@ -143,12 +199,15 @@ function canProbeLive(): boolean {
 
 async function probeTable(table: 'profiles' | 'medicines', signal: AbortSignal): Promise<boolean> {
   try {
-    const { count, error } = await rawSupabase
+    const { error } = await rawSupabase
       .from(table)
       .select('*', { count: 'exact', head: true })
       .limit(1)
       .abortSignal(signal);
-    return !error && (count ?? 0) > 0;
+    // A successful response is enough. Some tables (notably `profiles`) are
+    // protected by RLS, so an anonymous count is 0 even though the project is
+    // fully live and seeded. Only a transport/HTTP error means "offline".
+    return !error;
   } catch {
     return false;
   }
@@ -165,15 +224,24 @@ async function runProbe(): Promise<DataMode> {
     setDemoMode(true);
     return 'demo';
   }
+  // Clean up the key used by older builds (< v1.1) so a browser that was ever
+  // misclassified as demo self-heals on the next load.
+  if (hasStorage()) {
+    try {
+      window.localStorage.removeItem(LEGACY_MODE_KEY);
+    } catch {
+      // ignore
+    }
+  }
   const stored = hasStorage() ? window.localStorage.getItem(MODE_KEY) : null;
   if (stored === 'live') {
     cachedMode = 'live';
     return 'live';
   }
-  if (stored === 'demo') {
-    cachedMode = 'demo';
-    return 'demo';
-  }
+  // When a live project is configured we always re-probe instead of trusting a
+  // persisted `demo` value: the old probe could have been wrong or the network
+  // may have recovered since. `setDemoMode` above no longer writes `demo` in
+  // this situation, so this is a one-time self-heal at most.
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3500);
@@ -182,10 +250,12 @@ async function runProbe(): Promise<DataMode> {
       probeTable('profiles', controller.signal),
       probeTable('medicines', controller.signal),
     ]);
-    const mode: DataMode = profilesOk && medicinesOk ? 'live' : 'demo';
+    // Either public table answering is proof the project is reachable; prefer
+    // `medicines` (public read) but accept `profiles` too for custom schemas.
+    const mode: DataMode = profilesOk || medicinesOk ? 'live' : 'demo';
     setDemoMode(mode === 'demo');
     // eslint-disable-next-line no-console
-    console.info(`[MediConnect] data mode: ${mode}`);
+    console.debug(`[MediConnect] data mode: ${mode}`);
     return mode;
   } finally {
     clearTimeout(timer);
@@ -200,9 +270,13 @@ export function getDataMode(): Promise<DataMode> {
     return Promise.resolve('demo');
   }
   const stored = hasStorage() ? window.localStorage.getItem(MODE_KEY) : null;
-  if (stored === 'live' || stored === 'demo') {
-    cachedMode = stored;
-    return Promise.resolve(stored);
+  if (stored === 'live') {
+    cachedMode = 'live';
+    return Promise.resolve('live');
+  }
+  if (stored === 'demo' && !isLiveConfigured) {
+    cachedMode = 'demo';
+    return Promise.resolve('demo');
   }
   if (!probePromise) probePromise = runProbe();
   return probePromise;
@@ -220,6 +294,7 @@ export function resetDataMode(): void {
   if (hasStorage()) {
     try {
       window.localStorage.removeItem(MODE_KEY);
+      window.localStorage.removeItem(LEGACY_MODE_KEY);
     } catch {
       // ignore
     }

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiMail, FiLock, FiUser, FiActivity, FiHome, FiHeart, FiShield, FiZap } from 'react-icons/fi';
+import { FiMail, FiLock, FiUser, FiActivity, FiHome, FiHeart, FiShield, FiZap, FiChevronDown } from 'react-icons/fi';
 import { useAuth } from '../../lib/AuthContext';
 import { DEMO_PASSWORD } from '../../lib/demoData';
 import type { UserRole } from '../../types/database.types';
@@ -64,45 +64,18 @@ export default function Login() {
           </Link>
           <p className="text-sm text-[#5b7088] mb-5">Log in to your account</p>
 
-          <div className="rounded-2xl bg-brand-50/80 border border-brand-100 p-3 mb-5">
-            <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-brand-700 mb-2">
-              <FiZap /> One-click demo access
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_BUTTONS.map(({ role, label, hint, icon: Icon, className }) => (
-                <button
-                  key={role}
-                  type="button"
-                  disabled={demoBusy !== null || busy}
-                  onClick={() => handleDemo(role)}
-                  className={`text-left rounded-xl px-3 py-2.5 text-white bg-gradient-to-br ${className} shadow-sm disabled:opacity-60 transition-transform hover:-translate-y-0.5 ${
-                    role === 'admin' ? 'col-span-2' : ''
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5 text-xs font-extrabold">
-                    <Icon /> {demoBusy === role ? 'Signing in…' : label}
-                  </span>
-                  <span className="block text-[10px] text-white/85 font-medium mt-0.5">{hint}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-brand-700/80 mt-2 leading-snug">
-              No setup needed. Demo data is stored locally, so carts, orders, prescriptions and vitals persist on this device.
-            </p>
-          </div>
-
-          <label className="text-xs font-bold text-[#5b7088] mb-1 block">Email</label>
+          <label htmlFor="login-email" className="text-xs font-bold text-[#5b7088] mb-1 block">Email</label>
           <div className="relative mb-4">
             <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a9bb0]" />
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-              className="input-field pl-9" placeholder="you@example.com" />
+            <input id="login-email" type="email" autoComplete="email" required value={email}
+              onChange={(e) => setEmail(e.target.value)} className="input-field pl-9" placeholder="you@example.com" />
           </div>
 
-          <label className="text-xs font-bold text-[#5b7088] mb-1 block">Password</label>
+          <label htmlFor="login-password" className="text-xs font-bold text-[#5b7088] mb-1 block">Password</label>
           <div className="relative mb-2">
             <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a9bb0]" />
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-              className="input-field pl-9" placeholder="••••••••" />
+            <input id="login-password" type="password" autoComplete="current-password" required value={password}
+              onChange={(e) => setPassword(e.target.value)} className="input-field pl-9" placeholder="••••••••" />
           </div>
 
           {error && <p className="text-rose-500 text-xs font-semibold mt-2">{error}</p>}
@@ -114,11 +87,42 @@ export default function Login() {
           <p className="text-xs text-[#5b7088] text-center mt-4">
             No account? <Link to="/signup" className="text-brand-600 font-bold">Sign up</Link>
           </p>
-          <p className="text-[10px] text-[#8a9bb0] text-center mt-3 leading-relaxed">
-            Manual demo logins (password <code className="font-bold">{DEMO_PASSWORD}</code>):<br />
-            customer@mediconnect.app · doctor@mediconnect.app · owner@mediconnect.app ·
-            nurse@mediconnect.app · admin@mediconnect.app
-          </p>
+
+          <details className="mt-5 rounded-2xl bg-brand-50/70 border border-brand-100 overflow-hidden group">
+            <summary className="flex items-center justify-between gap-2 cursor-pointer list-none px-3 py-2.5 text-[11px] font-extrabold uppercase tracking-wide text-brand-700">
+              <span className="flex items-center gap-1.5"><FiZap /> Quick demo login <span className="font-semibold normal-case tracking-normal text-brand-700/70">(optional)</span></span>
+              <FiChevronDown className="transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-2 gap-2">
+                {DEMO_BUTTONS.map(({ role, label, hint, icon: Icon, className }) => (
+                  <button
+                    key={role}
+                    type="button"
+                    disabled={demoBusy !== null || busy}
+                    onClick={() => handleDemo(role)}
+                    className={`text-left rounded-xl px-3 py-2.5 text-white bg-gradient-to-br ${className} shadow-sm disabled:opacity-60 transition-transform hover:-translate-y-0.5 ${
+                      role === 'admin' ? 'col-span-2' : ''
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-extrabold">
+                      <Icon /> {demoBusy === role ? 'Signing in…' : label}
+                    </span>
+                    <span className="block text-[10px] text-white/85 font-medium mt-0.5">{hint}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-brand-700/80 mt-2 leading-snug">
+                Review aid only — the email and password form above is the standard sign-in.
+                Demo data is stored locally, so carts, orders, prescriptions and vitals persist on this device.
+              </p>
+              <p className="text-[10px] text-[#8a9bb0] mt-2 leading-relaxed">
+                Manual demo logins (password <code className="font-bold">{DEMO_PASSWORD}</code>):<br />
+                customer@mediconnect.app · doctor@mediconnect.app · owner@mediconnect.app ·
+                nurse@mediconnect.app · admin@mediconnect.app
+              </p>
+            </div>
+          </details>
         </form>
       </motion.div>
     </div>
